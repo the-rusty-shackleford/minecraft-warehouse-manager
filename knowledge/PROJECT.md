@@ -30,6 +30,13 @@ attached to its faces or directly above it. Last, crafting tables in the buildin
 its containers through the recipe book (D-0004), the mod's first mixins; the version
 became 0.2.0.
 
+0.2.1 (2026-09-23): Rusty, on pack 1.56.0 at a warehouse table: "clicking the book icon and
+nothing shows up". The server had sent the tally; EMI, which the pack ships, cancels the
+vanilla book's toggle and counts craftables through the first handler registered for the
+menu, its own. An EMI plugin now stands a warehouse handler first for the crafting table
+(D-0005); the booth runs with EMI and asserts EMI counts the chests and fills from them.
+The 0.2.0 booth ran without EMI, which is how this shipped broken.
+
 ## Status
 
 Rusty authorized release on 2026-09-22 together with Magical Map 0.2.0. The booth passed

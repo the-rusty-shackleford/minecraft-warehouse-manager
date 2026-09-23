@@ -60,6 +60,9 @@ public final class Pooled {
             if (menuId != containerId) return;
             counts.forEach((item, n) -> into.accountStack(new ItemStack(item, n), n));
         }
+        /** effects: the tally when it belongs to the menu, else an empty map; never null. The map
+         * is immutable, so sharing it is safe. */
+        public static synchronized Map<Item, Integer> snapshot(int menuId) { return menuId == containerId ? counts : Map.of(); }
         /** effects: a one-line description for diagnostics. */
         public static synchronized String describe() { return "menu " + containerId + ", " + counts.size() + " kinds, dirty=" + dirty; }
         /** effects: whether a fresh tally arrived since the last call; clears the flag. */

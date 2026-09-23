@@ -70,6 +70,15 @@ what you made. Close the table without crafting and the drawn ingredients stay w
 Tables outside the building's walls, and the inventory's own 2x2 grid, are unaffected. As
 always, the book shows only recipes you have unlocked; the warehouse does not unlock them.
 
+With **EMI** installed, EMI takes over the recipe book button (its default setting turns it
+into EMI's own "craftables" toggle). Warehouse Manager registers an EMI handler for the
+crafting table, so EMI's craftables view and its fill buttons count the building's chests
+too, and a fill draws from them exactly as the vanilla book does. If EMI shows nothing
+craftable at a table in a managed building, check the server log for the line
+"<player> opened a table in the building at <manager>: sending N kinds": absent, the table
+is outside the building (see "What counts as the building"); present, the client is on an
+older pack without this handler.
+
 **Existing contents move.** That is the point of placing the block, and it will surprise anyone
 sharing the building who did not expect their sorting to change.
 
@@ -111,6 +120,8 @@ build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
+**0.2.1**: EMI's craftables view and fill buttons count the building's chests (0.2.0 fed only
+the vanilla recipe book, which EMI hides behind its own; every player with EMI saw nothing).
 **0.2.0**: crafting tables in the building draw on its chests; overflow containers and
 sibling groups are placed next to each other (0.1.0 chose them by distance from the manager,
 which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an empty building

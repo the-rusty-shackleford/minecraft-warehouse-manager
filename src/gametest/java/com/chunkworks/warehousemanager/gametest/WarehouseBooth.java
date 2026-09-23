@@ -32,6 +32,7 @@ public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
     private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2), TABLE = new BlockPos(3, 100, 3);
     private static int tick;
+    private static boolean emiFilled;
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         if (!Boolean.getBoolean("warehousemanager.booth")) return;
         var mc = Minecraft.getInstance();
@@ -116,7 +117,34 @@ public final class WarehouseBooth {
                     LOG.info("warehousemanager booth: hut labels {}", m.plan().labels());
                 });
                 case 405 -> photo(mc, "05-furnished-hut");
-                case 410 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // EMI, as the pack ships it, takes over the recipe book button and counts craftables
+                // through its first handler for the menu (D-0005): the table reopens with an empty
+                // inventory and EMI must count the chests' planks and fill from them.
+                case 420 -> server(mc, p -> { p.teleportTo(p.serverLevel(), 0.5, 100, 2.2, 0, 15); p.getInventory().clearContent();
+                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))); });
+                case 450, 470, 490, 510 -> {
+                    if (emiFilled) break;
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "crafting table screen open again for EMI");
+                    var recipe = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stick"));
+                    if (recipe == null) { LOG.info("warehousemanager booth: EMI has not loaded its recipes yet at tick {}", tick); break; }
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    var handlers = dev.emi.emi.registry.EmiRecipeFiller.getAllHandlers(screen);
+                    check(!handlers.isEmpty() && handlers.get(0) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "the warehouse handler stands first for the crafting table: " + handlers);
+                    var inventory = dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player);
+                    check(inventory.canCraft(recipe), "EMI counts the building's planks with an empty inventory: " + Pooled.Tally.describe());
+                    check(dev.emi.emi.registry.EmiRecipeFiller.getFirstValidHandler(recipe, screen) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "EMI fills sticks through the warehouse handler");
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill is accepted");
+                    emiFilled = true;
+                }
+                case 530 -> {
+                    check(emiFilled, "EMI loaded its recipes in time");
+                    int planks = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.OAK_PLANKS)) planks += mc.player.containerMenu.getSlot(i).getItem().getCount();
+                    check(planks == 2, "EMI's fill drew two planks from the chests into the grid, got " + planks);
+                    photo(mc, "08-emi-fill-from-chests");
+                    mc.player.closeContainer();
+                }
+                case 545 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }

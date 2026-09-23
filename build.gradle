@@ -6,7 +6,12 @@ version = mod_version
 group = 'com.chunkworks.warehousemanager'
 base { archivesName = 'warehousemanager' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-repositories { mavenCentral() }
+repositories {
+    mavenCentral()
+    // EMI (recipe viewer): the optional plugin compiles against it; the booth and GameTests run it.
+    maven { url = 'https://maven.terraformersmc.com/releases/'; content { includeGroup 'dev.emi' } }
+}
+def emi = 'dev.emi:emi-neoforge:1.1.24+1.21.1'
 sourceSets { domain; gametest }
 def verificationDirectories = [file('run/config'), file('run/booth/config')]
 def boothDirectory = file('run/booth')
@@ -81,6 +86,10 @@ dependencies {
     testImplementation sourceSets.domain.output
     testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.9.2'
+    // The full jar, not ":api": the plugin reorders EMI's handler registry (D-0005). Compile only.
+    compileOnly emi
+    gametestCompileOnly emi
+    gametestRuntimeOnly emi
 }
 tasks.named('test', Test) { useJUnitPlatform() }
 jar { from sourceSets.domain.output }
