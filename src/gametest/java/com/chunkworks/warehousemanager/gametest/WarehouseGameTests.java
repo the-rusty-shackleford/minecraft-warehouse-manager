@@ -196,6 +196,21 @@ public final class WarehouseGameTests {
             h.assertTrue(joined.contains(title) && joined.contains(hint), "title and hint across the two signs: " + joined);
         });
     }
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void halfOfAPairWithNoPartnerIsASingleChest(GameTestHelper h) {
+        house(h); loot(h);
+        var lone = new BlockPos(8, 2, 12);
+        h.setBlock(lone, chest(Direction.NORTH, ChestType.LEFT));
+        fill(chestAt(h, lone), Items.COAL, 9);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.succeedWhen(() -> {
+            var m = manager(h);
+            h.assertTrue(m.settled(), "settled");
+            h.assertTrue(m.units().size() == 8, "the lone half counts once, got " + m.units().size());
+            var unit = m.units().stream().filter(u -> u.primary().equals(h.absolutePos(lone))).findFirst();
+            h.assertTrue(unit.isPresent() && unit.get().positions().size() == 1, "lone half is a single-block unit");
+            h.assertTrue(m.plan().labels().containsKey(unit.get().id()), "lone half is labelled");
+        });
+    }
     @GameTest(template = "house", timeoutTicks = 200, skyAccess = true) public void breakingTheManagerSpillsItsBuffer(GameTestHelper h) {
         house(h);
         h.setBlock(MANAGER, WarehouseManager.BLOCK.get());

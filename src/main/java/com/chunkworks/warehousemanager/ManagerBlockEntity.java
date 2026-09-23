@@ -124,7 +124,7 @@ public final class ManagerBlockEntity extends BlockEntity {
             cursor.set(x, y, z);
             var state = sl.getBlockState(cursor);
             if (!state.is(WarehouseManager.MANAGED)) return;
-            var unit = unitAt(cursor.immutable(), state);
+            var unit = unitAt(sl, cursor.immutable(), state);
             found.putIfAbsent(unit.primary().asLong(), unit);
         });
         fill = null;
@@ -133,7 +133,7 @@ public final class ManagerBlockEntity extends BlockEntity {
         else { min = worldPosition; max = worldPosition; }
         Managers.releaseClaims(this);
         var claimed = new ArrayList<Unit>();
-        for (var u : found.values()) if (Managers.claim(this, u.primary())) claimed.add(u);
+        for (var u : found.values()) if (container(sl, u) != null && Managers.claim(this, u.primary())) claimed.add(u);
         claimed.sort(Comparator.comparingInt(u -> (int) u.primary().distSqr(worldPosition)));
         units = List.copyOf(claimed);
         var demand = new HashMap<String, Integer>();
@@ -160,11 +160,20 @@ public final class ManagerBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    private static Unit unitAt(BlockPos pos, BlockState state) {
+    /** effects: the unit at a managed block; a chest half whose partner is missing, of the same
+     * half, or facing elsewhere counts as a single chest. */
+    private static Unit unitAt(Level lvl, BlockPos pos, BlockState state) {
         if (state.getBlock() instanceof ChestBlock && ChestBlock.getBlockType(state) != DoubleBlockCombiner.BlockType.SINGLE) {
-            var other = pos.relative(ChestBlock.getConnectedDirection(state));
-            var primary = pos.asLong() < other.asLong() ? pos : other;
-            return new Unit(id(primary), primary, List.of(primary, primary.equals(pos) ? other : pos));
+            var direction = ChestBlock.getConnectedDirection(state);
+            var other = pos.relative(direction);
+            var partner = lvl.getBlockState(other);
+            boolean paired = partner.is(state.getBlock()) && ChestBlock.getBlockType(partner) != DoubleBlockCombiner.BlockType.SINGLE
+                    && ChestBlock.getBlockType(partner) != ChestBlock.getBlockType(state)
+                    && ChestBlock.getConnectedDirection(partner) == direction.getOpposite();
+            if (paired) {
+                var primary = pos.asLong() < other.asLong() ? pos : other;
+                return new Unit(id(primary), primary, List.of(primary, primary.equals(pos) ? other : pos));
+            }
         }
         return new Unit(id(pos), pos, List.of(pos));
     }

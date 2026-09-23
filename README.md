@@ -83,4 +83,7 @@ build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
-**0.1.0**, unreleased. Verified so far: 27 JUnit tests and 6 GameTests locally.
+**0.1.0**, released 2026-09-22. Download it from
+[GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases/tag/v0.1.0).
+Verified: 27 JUnit tests, 7 real-server GameTests and the photo booth; see
+[release verification](devtools/verification/release-0.1.0.md).

@@ -17,7 +17,9 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
   plan, sort, label, buffer, status), `Signs`, `Transfer`, `Managers` (claims and rescan wake-ups).
 - `src/gametest`: six real-server GameTests on a two-floor house, plus the photo booth.
 
-## Open
+## Status
 
-- The booth walkthrough under Rusty's shaders (sign readability) is the remaining visual check.
-- No pack deployment; release waits on Rusty's go.
+Rusty authorized release on 2026-09-22 together with Magical Map 0.2.0. The booth passed
+and its five photos were inspected; see
+[release verification](../devtools/verification/release-0.1.0.md). Published as 0.1.0 on
+GitHub Releases and added to the pack.

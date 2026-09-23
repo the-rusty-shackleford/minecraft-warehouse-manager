@@ -54,14 +54,26 @@ public final class WarehouseBooth {
                     check(m != null && m.settled(), "manager settled");
                     check(m.units().size() == 6, "six containers managed, got " + m.units().size());
                     LOG.info("warehousemanager booth: cut {} labels {}", m.plan().cut(), m.plan().labels());
+                    var loose = p.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(-6, 99, -6, 6, 106, 6));
+                    for (var e : loose) LOG.info("warehousemanager booth: loose item {} at {}", e.getItem(), e.blockPosition());
+                    for (var u : m.units()) {
+                        var c = m.container(p.serverLevel(), u);
+                        var b = new StringBuilder();
+                        for (int i = 0; i < c.getContainerSize(); i++) if (!c.getItem(i).isEmpty()) b.append(c.getItem(i)).append(' ');
+                        LOG.info("warehousemanager booth: {} {} holds {}", u.id(), m.plan().labels().get(u.id()).node(), b);
+                    }
+                    check(loose.isEmpty(), "no item entities lying about the room");
                 });
                 case 125 -> photo(mc, "00-labelled-row");
                 case 130 -> server(mc, p -> p.teleportTo(p.serverLevel(), 0.5, 100, -2.2, 180, 12));
                 case 150 -> photo(mc, "01-sign-closeup");
-                case 155 -> server(mc, p -> p.teleportTo(p.serverLevel(), -3.0, 100, 2.0, 0, 12));
+                case 155 -> server(mc, p -> p.teleportTo(p.serverLevel(), -2.0, 100, -0.5, 90, 12));
                 case 175 -> photo(mc, "02-double-chest-two-signs");
                 case 180 -> server(mc, p -> p.teleportTo(p.serverLevel(), 0.5, 100, 2.2, 0, 15));
-                case 200 -> photo(mc, "03-manager-block");
+                case 200 -> { photo(mc, "03-manager-block"); server(mc, p -> {
+                    var loose = p.serverLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(-6, 99, -6, 6, 106, 6));
+                    LOG.info("warehousemanager booth: {} loose items at tick 200, player holds {}", loose.size(), p.getInventory().items.stream().filter(s -> !s.isEmpty()).toList());
+                }); }
                 case 205 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
                 case 225 -> { check(mc.screen instanceof ContainerScreen, "manager opens the vanilla chest screen"); photo(mc, "04-manager-screen"); }
                 case 235 -> { mc.player.closeContainer(); LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
@@ -76,7 +88,9 @@ public final class WarehouseBooth {
             l.setBlock(new BlockPos(x, y, z), shell ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 3);
         }
         for (int x = -6; x <= 6; x++) for (int z = -6; z <= 6; z++) l.setBlock(new BlockPos(x, 106, z), Blocks.AIR.defaultBlockState(), 3);
-        for (int i = 0; i < 12; i++) l.setBlock(new BlockPos(-6 + i, 104, -6), Blocks.GLOWSTONE.defaultBlockState(), 3);
+        for (int i = -6; i <= 6; i++) for (var edge : new BlockPos[] { new BlockPos(i, 104, -6), new BlockPos(i, 104, 6), new BlockPos(-6, 104, i), new BlockPos(6, 104, i) })
+            l.setBlock(edge, Blocks.GLOWSTONE.defaultBlockState(), 3);
+        for (int x = -4; x <= 4; x += 4) for (int z = -4; z <= 4; z += 4) l.setBlock(new BlockPos(x, 105, z), Blocks.GLOWSTONE.defaultBlockState(), 3);
         var south = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.SOUTH);
         Object[][] loot = {
                 { Items.COBBLESTONE, 64, Items.OAK_LOG, 16, Items.BREAD, 8, Items.IRON_INGOT, 5 },
@@ -91,8 +105,8 @@ public final class WarehouseBooth {
             for (int j = 0; j < loot[i].length; j += 2) c.setItem(j / 2, new ItemStack((Item) loot[i][j], (Integer) loot[i][j + 1]));
         }
         var east = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.EAST);
-        l.setBlock(new BlockPos(-5, 100, -1), east.setValue(ChestBlock.TYPE, ChestType.RIGHT), 3);
-        l.setBlock(new BlockPos(-5, 100, 0), east.setValue(ChestBlock.TYPE, ChestType.LEFT), 3);
+        l.setBlock(new BlockPos(-5, 100, -1), east.setValue(ChestBlock.TYPE, ChestType.LEFT), 3);
+        l.setBlock(new BlockPos(-5, 100, 0), east.setValue(ChestBlock.TYPE, ChestType.RIGHT), 3);
         var d = ChestBlock.getContainer((ChestBlock) east.getBlock(), l.getBlockState(new BlockPos(-5, 100, 0)), l, new BlockPos(-5, 100, 0), true);
         d.setItem(0, new ItemStack(Items.GLASS, 10)); d.setItem(1, new ItemStack(Items.EMERALD, 3)); d.setItem(2, new ItemStack(Items.GRAVEL, 20));
     }
