@@ -4,15 +4,25 @@ package com.chunkworks.warehousemanager.domain;
 import java.util.*;
 
 /** Chooses which group each container holds. Starts from the top groups, folds the smallest into
- * Misc while they do not fit the containers, then splits the largest groups into their children
- * while spare containers remain, and finally hands leftover containers to the fullest groups.
- * Labels stick: a container keeps its group when that group still needs a container. */
+ * Misc while they do not fit the containers, gives a group over {@link #FULL} of its containers
+ * another before any group is split, then splits the largest groups into their children while
+ * spare containers remain, and finally hands leftover containers to the fullest groups.
+ * Labels stick: a container keeps its group when that group still needs a container. Containers
+ * cluster: a group's second container is the free one nearest its first, and a group's first is
+ * near its siblings' containers, so "Food 1/2" and "Food 2/2" stand together and Stone stands by
+ * Wood. */
 public final class Planner {
-    /** A managed container: its id, slot capacity, and the slots each leaf currently occupies. */
-    public record Chest(String id, int capacity, Map<String, Integer> held) {
+    /** A managed container: its id, slot capacity, the slots each leaf currently occupies, and
+     * where it stands. */
+    public record Chest(String id, int capacity, Map<String, Integer> held, int x, int y, int z) {
         public Chest {
             if (capacity <= 0) throw new IllegalArgumentException("capacity");
             held = Map.copyOf(held);
+        }
+        /** effects: squared distance between the two containers. */
+        long distance(Chest o) {
+            long dx = x - o.x, dy = y - o.y, dz = z - o.z;
+            return dx * dx + dy * dy + dz * dz;
         }
     }
     /** The group on a container's sign: {@code ordinal} of {@code total} containers for the node. */
@@ -79,7 +89,7 @@ public final class Planner {
             for (int i = 0; i < list.size(); i++) labels.put(list.get(i).id(), new Label(e.getKey(), i + 1, list.size()));
         }
         for (var leaf : t.leaves()) {
-            var node = state.owner(leaf, cut, folded);
+            var node = state.owner(leaf, cut);
             var list = new ArrayList<String>();
             for (var c : fit.get(node)) list.add(c.id());
             routes.put(leaf, List.copyOf(list));
@@ -95,11 +105,10 @@ public final class Planner {
         State(Taxonomy t, List<Chest> chests, Map<String, Integer> demand, Map<String, String> previous) {
             this.t = t; this.chests = chests; this.demand = demand; this.previous = previous;
         }
-        /** effects: the cut node (or Misc) that owns a leaf under the current fold. */
-        String owner(String leaf, Set<String> cut, Set<String> folded) {
+        /** effects: the cut node that owns a leaf, Misc when its group was folded. */
+        String owner(String leaf, Set<String> cut) {
             var in = t.ancestorIn(leaf, cut);
-            if (in != null) return in;
-            return Taxonomy.MISC;
+            return in != null ? in : Taxonomy.MISC;
         }
         /** effects: slots demanded by everything the node owns, counting folded groups into Misc. */
         int demand(String node, Set<String> folded) {
@@ -114,28 +123,51 @@ public final class Planner {
             if (node.equals(Taxonomy.MISC)) for (var f : folded) for (var leaf : t.leavesUnder(f)) sum += c.held().getOrDefault(leaf, 0);
             return sum;
         }
-        /** effects: greedy assignment, largest demand first, each node taking its preferred free
-         * chests until capacity covers demand and it holds one more than its {@code extra}; null
-         * when some node gets no chest. */
+        /** effects: greedy assignment, largest demand first, each node taking chests one at a time
+         * until capacity covers demand and it holds one more than its {@code extra}; null when
+         * some node gets fewer than it wants. */
         Map<String, List<Chest>> fit(Set<String> cut, Set<String> folded, Map<String, Integer> extra) {
             var nodes = new ArrayList<>(cut);
             nodes.sort(Comparator.comparingInt((String n) -> -demand(n, folded)).thenComparing(n -> n));
             var free = new ArrayList<>(chests);
             var out = new LinkedHashMap<String, List<Chest>>();
             for (var n : nodes) {
-                var need = demand(n, folded);
-                int want = 1 + extra.getOrDefault(n, 0);
-                var pref = new ArrayList<>(free);
-                pref.sort(Comparator.comparingInt((Chest c) -> n.equals(previous.get(c.id())) ? 0 : 1)
-                        .thenComparingInt(c -> -held(c, n, folded)).thenComparingInt(chests::indexOf));
+                int need = demand(n, folded), want = 1 + extra.getOrDefault(n, 0);
                 var taken = new ArrayList<Chest>();
                 int cap = 0;
-                for (var c : pref) { if (taken.size() >= want && cap >= need) break; taken.add(c); cap += c.capacity(); }
+                while (!free.isEmpty() && (taken.size() < want || cap < need)) {
+                    var c = choose(free, n, taken, out, folded);
+                    free.remove(c); taken.add(c); cap += c.capacity();
+                }
                 if (taken.size() < want) return null;
-                free.removeAll(taken);
                 out.put(n, taken);
             }
             return out;
+        }
+        /** effects: the free chest the node takes next. Its first: one labelled with it before, then
+         * the one holding most of its items, then the one nearest its siblings' chests, then the
+         * nearest to the manager. Its next: one labelled with it before, then the one nearest the
+         * chests it already has, then the one holding most, then the nearest to the manager. */
+        Chest choose(List<Chest> free, String n, List<Chest> taken, Map<String, List<Chest>> out, Set<String> folded) {
+            var anchors = taken.isEmpty() ? siblings(n, out) : taken;
+            Comparator<Chest> order = Comparator.comparingInt((Chest c) -> n.equals(previous.get(c.id())) ? 0 : 1);
+            if (taken.isEmpty()) order = order.thenComparingInt(c -> -held(c, n, folded)).thenComparingLong(c -> nearest(anchors, c));
+            else order = order.thenComparingLong(c -> nearest(anchors, c)).thenComparingInt(c -> -held(c, n, folded));
+            order = order.thenComparingInt(chests::indexOf);
+            return Collections.min(free, order);
+        }
+        /** effects: the chests already given to nodes sharing the node's parent. */
+        List<Chest> siblings(String n, Map<String, List<Chest>> out) {
+            var parent = t.node(n).parent();
+            var list = new ArrayList<Chest>();
+            for (var e : out.entrySet()) if (parent != null && parent.equals(t.node(e.getKey()).parent())) list.addAll(e.getValue());
+            return list;
+        }
+        /** effects: the squared distance from a chest to the nearest anchor; 0 without anchors. */
+        static long nearest(List<Chest> anchors, Chest c) {
+            long best = 0;
+            for (int i = 0; i < anchors.size(); i++) { long d = anchors.get(i).distance(c); if (i == 0 || d < best) best = d; }
+            return best;
         }
         /** effects: the node's demand per slot of the containers it was given. */
         double fullness(Map<String, List<Chest>> fit, String node, Set<String> folded) {
@@ -143,17 +175,21 @@ public final class Planner {
             for (var c : fit.get(node)) cap += c.capacity();
             return (double) demand(node, folded) / cap;
         }
-        /** effects: gives every unassigned chest to the fullest node, ties to the one with fewer. */
+        /** effects: gives every unassigned chest to the fullest node (ties to the one with fewer),
+         * each time the free chest nearest that node's chests. */
         void spare(Map<String, List<Chest>> fit, Set<String> cut, Set<String> folded) {
             var free = new ArrayList<>(chests);
             for (var list : fit.values()) free.removeAll(list);
-            for (var c : free) {
+            while (!free.isEmpty()) {
                 String best = null; double bestRatio = -1;
                 for (var n : cut) {
                     double ratio = fullness(fit, n, folded);
                     if (ratio > bestRatio || (ratio == bestRatio && fit.get(n).size() < fit.get(best).size())) { bestRatio = ratio; best = n; }
                 }
-                fit.get(best).add(c);
+                var anchors = fit.get(best);
+                var c = Collections.min(free, Comparator.comparingLong((Chest x) -> nearest(anchors, x)).thenComparingInt(chests::indexOf));
+                free.remove(c);
+                anchors.add(c);
             }
         }
     }

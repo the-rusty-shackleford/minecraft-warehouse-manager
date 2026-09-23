@@ -26,10 +26,11 @@ var structures = tasks.register('copyGameTestStructures', Copy) {
     from 'devtools/gameteststructures'
     into 'run/gameteststructures'
 }
+def boothShots = file('run/booth/screenshots')
 var boothWorld = tasks.register('prepareBoothWorld', Sync) {
     // The booth saves into its copy; a stale copy rebuilds the room over the last run's chests.
     outputs.upToDateWhen { false }
-    doFirst { delete 'run/booth/screenshots' }
+    doFirst { boothShots.deleteDir() }
     from 'run/world'
     into 'run/booth/saves/booth'
     exclude 'session.lock'

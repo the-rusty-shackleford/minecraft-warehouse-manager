@@ -31,7 +31,9 @@ paper       redstone paper
    groups and folds the smallest into Misc; with spare containers it splits the fullest group into
    its children; a group that outgrows a container takes several ("Stone 1/3"). A container keeps
    its group across rescans while that group still needs it, and a group prefers the container
-   that already holds most of it, so little moves.
+   that already holds most of it, so little moves. Containers cluster: a group's second
+   container is the free one nearest its first, and a group's first stands near its siblings'
+   (Stone by Wood by Earth), so "Food 1/2" and "Food 2/2" are neighbours.
 4. **Sorts.** At most four stacks move per tick, and a container a player has open is skipped.
    Once a full pass finds nothing to move the manager goes idle and costs nothing per tick.
 5. **Labels.** A sign within one block of a container is rewritten; otherwise an oak wall sign is
@@ -83,7 +85,9 @@ build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
-**0.1.0**, released 2026-09-22. Download it from
-[GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases/tag/v0.1.0).
-Verified: 27 JUnit tests, 7 real-server GameTests and the photo booth; see
-[release verification](devtools/verification/release-0.1.0.md).
+**0.1.1**: overflow containers and sibling groups are placed next to each other; 0.1.0 chose
+them by distance from the manager, which could put "Food 1/2" and "Food 2/2" at opposite
+ends of a building. Download from
+[GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
+Verified: 30 JUnit tests, 7 real-server GameTests and the photo booth; see
+[release verification](devtools/verification/).

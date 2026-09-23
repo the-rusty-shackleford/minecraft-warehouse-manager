@@ -149,7 +149,7 @@ public final class ManagerBlockEntity extends BlockEntity {
                 held.merge(leaf, 1, Integer::sum);
                 demand.merge(leaf, 1, Integer::sum);
             }
-            chests.add(new Planner.Chest(u.id(), c.getContainerSize(), held));
+            chests.add(new Planner.Chest(u.id(), c.getContainerSize(), held, u.primary().getX(), u.primary().getY(), u.primary().getZ()));
         }
         for (int i = 0; i < buffer.getContainerSize(); i++) if (!buffer.getItem(i).isEmpty()) demand.merge(Facts.leaf(buffer.getItem(i)), 1, Integer::sum);
         plan = Planner.plan(Taxonomy.STANDARD, chests, demand, labels);

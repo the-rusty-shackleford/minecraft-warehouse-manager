@@ -188,7 +188,7 @@ public final class WarehouseGameTests {
             var id = m.units().stream().filter(u -> u.positions().size() == 2).findFirst().orElseThrow().id();
             var label = m.plan().labels().get(id);
             var title = SignText.title(Taxonomy.STANDARD, label, m.plan().cut().size() == 1);
-            var hint = Taxonomy.STANDARD.node(label.node()).hint().split(",")[0];
+            var hint = Taxonomy.STANDARD.node(label.node()).hint().split("[ ,]")[0];
             var signs = new ArrayList<>(signsAround(h, DOUBLE_LEFT));
             for (var s : signsAround(h, DOUBLE_RIGHT)) if (!signs.contains(s)) signs.add(s);
             h.assertTrue(signs.size() == 2, "two signs on the double chest, got " + signs.size());

@@ -6,17 +6,19 @@ import java.util.*;
 import static com.chunkworks.warehousemanager.domain.Taxonomy.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Partitions: no chests; one chest (everything to Misc); fewer chests than top groups (fold the
+/** Partitions: overflow chests adjacent; sibling groups adjacent; spare chests adjacent; no chests; one chest (everything to Misc); fewer chests than top groups (fold the
  * smallest into Misc, keep the largest); exactly the top groups; spare chests split the largest
  * group first; a group larger than one chest takes several with ordinals; sticky previous labels;
  * the chest holding most of a group receives it; leftover chests go to the fullest group; every
  * leaf routes to a labelled chest; duplicate chest ids rejected. */
 final class PlannerTest {
     private static final Taxonomy T = Taxonomy.STANDARD;
+    private static int placed;
+    /** effects: a chest standing three blocks east of the one made before it. */
     private static Planner.Chest chest(String id, int capacity, Object... held) {
         var map = new HashMap<String, Integer>();
         for (int i = 0; i < held.length; i += 2) map.put((String) held[i], (Integer) held[i + 1]);
-        return new Planner.Chest(id, capacity, map);
+        return new Planner.Chest(id, capacity, map, 3 * placed++, 0, 0);
     }
     private static List<Planner.Chest> chests(int n) {
         var out = new ArrayList<Planner.Chest>();
@@ -101,6 +103,28 @@ final class PlannerTest {
         assertEquals(2, p.routes().get(STONE).size(), p.routes().get(STONE).toString());
         assertEquals(1, p.routes().get(FOOD).size());
         assertCoversEverything(p, chests(7));
+    }
+    @Test void overflowChestsStandNextToEachOther() {
+        var chests = List.of(chest("c0", 27), chest("c1", 27), chest("c2", 27), chest("c3", 27, STONE, 20), chest("c4", 27), chest("c5", 27));
+        var p = plan(chests, Map.of(STONE, 40, FOOD, 1));
+        var stone = p.routes().get(STONE);
+        assertEquals("c3", stone.get(0));
+        assertTrue(stone.size() == 2 && (stone.get(1).equals("c2") || stone.get(1).equals("c4")), stone.toString());
+    }
+    @Test void siblingGroupsClusterTogether() {
+        var chests = new ArrayList<Planner.Chest>();
+        for (int i = 0; i < 19; i++) chests.add(i == 10 ? chest("c10", 27, STONE, 1) : chest("c" + i, 27));
+        var p = plan(chests, Map.of(STONE, 1, WOOD, 1));
+        assertEquals(List.of("c10"), p.routes().get(STONE));
+        var wood = p.routes().get(WOOD).get(0);
+        assertTrue(wood.equals("c9") || wood.equals("c11"), wood);
+    }
+    @Test void spareChestsJoinTheFullestGroupBesideIt() {
+        var chests = List.of(chest("c0", 27), chest("c1", 27), chest("c2", 27), chest("c3", 27), chest("c4", 27, STONE, 26), chest("c5", 27), chest("c6", 27));
+        var p = plan(chests, Map.of(STONE, 26, FOOD, 1));
+        var stone = p.routes().get(STONE);
+        assertEquals(2, stone.size(), stone.toString());
+        assertTrue(stone.contains("c4") && (stone.contains("c3") || stone.contains("c5")), stone.toString());
     }
     @Test void rejectsDuplicateChestIds() {
         assertThrows(IllegalArgumentException.class, () -> plan(List.of(chest("a", 27), chest("a", 27)), Map.of()));

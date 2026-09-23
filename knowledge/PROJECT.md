@@ -17,6 +17,12 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
   plan, sort, label, buffer, status), `Signs`, `Transfer`, `Managers` (claims and rescan wake-ups).
 - `src/gametest`: six real-server GameTests on a two-floor house, plus the photo booth.
 
+## 0.1.1
+
+Rusty's first-evening report: "Food 1/2" and "Food 2/2" ended up apart. The planner now
+knows where containers stand and clusters a group's containers and sibling groups
+(D-0002). Three planner tests pin it.
+
 ## Status
 
 Rusty authorized release on 2026-09-22 together with Magical Map 0.2.0. The booth passed
