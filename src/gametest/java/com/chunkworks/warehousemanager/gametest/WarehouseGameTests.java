@@ -236,6 +236,34 @@ public final class WarehouseGameTests {
             h.assertTrue(m.plan().cut().size() == 7, "seven groups labelled, got " + m.plan().cut());
         });
     }
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void stackedChestsKeepTheSignsAboveThem(GameTestHelper h) {
+        shell(h);
+        var lower = new BlockPos(12, 2, 6);
+        var upper = new BlockPos(12, 4, 6);
+        h.setBlock(lower, chest(Direction.WEST, ChestType.SINGLE));
+        h.setBlock(upper, chest(Direction.WEST, ChestType.SINGLE));
+        for (var pos : new BlockPos[] { lower.above(), upper.above() })
+            h.setBlock(pos, Blocks.OAK_WALL_SIGN.defaultBlockState().setValue(WallSignBlock.FACING, Direction.WEST));
+        fill(chestAt(h, lower), Items.COBBLESTONE, 20);
+        fill(chestAt(h, upper), Items.BREAD, 9);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.succeedWhen(() -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 2, "two stacked chests managed");
+            var lowerId = m.units().stream().filter(u -> u.primary().equals(h.absolutePos(lower))).findFirst().orElseThrow().id();
+            var upperId = m.units().stream().filter(u -> u.primary().equals(h.absolutePos(upper))).findFirst().orElseThrow().id();
+            boolean alone = m.plan().cut().size() == 1;
+            var lowerTitle = SignText.title(Taxonomy.STANDARD, m.plan().labels().get(lowerId), alone);
+            var upperTitle = SignText.title(Taxonomy.STANDARD, m.plan().labels().get(upperId), alone);
+            h.assertTrue(!lowerTitle.equals(upperTitle), "the two chests carry different groups");
+            var between = (SignBlockEntity) h.getLevel().getBlockEntity(h.absolutePos(lower.above()));
+            var top = (SignBlockEntity) h.getLevel().getBlockEntity(h.absolutePos(upper.above()));
+            h.assertTrue(text(between).contains(lowerTitle), "the sign between the chests labels the lower one: " + text(between));
+            h.assertTrue(text(top).contains(upperTitle), "the sign above the upper chest labels it: " + text(top));
+            h.assertTrue(!(h.getLevel().getBlockState(h.absolutePos(lower.west())).getBlock() instanceof WallSignBlock)
+                    && !(h.getLevel().getBlockState(h.absolutePos(upper.west())).getBlock() instanceof WallSignBlock), "no extra signs conjured on the fronts");
+        });
+    }
     @GameTest(template = "house", timeoutTicks = 200, skyAccess = true) public void breakingTheManagerSpillsItsBuffer(GameTestHelper h) {
         house(h);
         h.setBlock(MANAGER, WarehouseManager.BLOCK.get());

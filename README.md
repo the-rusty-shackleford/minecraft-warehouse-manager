@@ -36,8 +36,10 @@ paper       redstone paper
    (Stone by Wood by Earth), so "Food 1/2" and "Food 2/2" are neighbours.
 4. **Sorts.** At most four stacks move per tick, and a container a player has open is skipped.
    Once a full pass finds nothing to move the manager goes idle and costs nothing per tick.
-5. **Labels.** A sign within one block of a container is rewritten; otherwise an oak wall sign is
-   conjured on the container's front face, or any free side. A double chest gets two signs: the
+5. **Labels.** A sign that belongs to a container is rewritten: one attached to its faces, or one
+   standing directly above it. A sign beside, below or diagonal to it is somebody else's, so with
+   chests stacked in a column the sign between two chests labels the lower one. A container with
+   no such sign gets an oak wall sign conjured on its front face, or any free side. A double chest gets two signs: the
    group's name on one, its typical contents on the other. Signs are not consumed from anywhere.
 
 It rescans every ten seconds, and at once when a container or sign is placed or broken inside the

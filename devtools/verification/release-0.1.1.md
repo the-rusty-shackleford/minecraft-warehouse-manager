@@ -9,7 +9,9 @@
   out in a line. Four new in `FurnishingTest`: an empty building wants its first container;
   another group is worth a container until every leaf is labelled; a crowded group wants a
   double beside it; a spare for an uncrowded group is not wanted (D-0003).
-- `./gradlew runGameTestServer`: 8 real-server GameTests; the new one drops seven chest items
+- `./gradlew runGameTestServer`: 9 real-server GameTests; stacked chests with a sign between
+  them and one above keep their own signs (the sign between labels the lower chest) and get no
+  extra signs conjured; the new one drops seven chest items
   into the manager of an empty house and finds seven chests stood on the floor, backed by
   walls, signed on the open face, seven groups labelled, no chest item left. The double-chest test's hint check
   now matches the hint's first word, since a hint may wrap across sign lines.

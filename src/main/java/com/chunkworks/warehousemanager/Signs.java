@@ -15,20 +15,32 @@ import java.util.*;
  * container is reused; otherwise an oak wall sign is placed on a free face, the front first. */
 final class Signs {
     private Signs() {}
-    /** effects: up to {@code max} sign positions within one block of the unit's blocks, nearest
-     * faces first, skipping any in {@code taken}; found signs are added to {@code taken}. */
+    /** effects: up to {@code max} signs that label the unit: wall signs attached to its blocks'
+     * faces, the front face first, then any sign standing directly above a block of it. A sign
+     * beside, below or diagonal to the container is somebody else's. Skips {@code taken}; found
+     * signs are added to it. */
     static List<BlockPos> nearby(Level level, ManagerBlockEntity.Unit unit, int max, Set<BlockPos> taken) {
         var out = new ArrayList<BlockPos>();
         for (var base : unit.positions()) {
-            for (var d : Direction.values()) consider(level, base.relative(d), taken, out, max);
-            for (int dx = -1; dx <= 1 && out.size() < max; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++)
-                consider(level, base.offset(dx, dy, dz), taken, out, max);
+            var front = front(level.getBlockState(base));
+            var order = new ArrayList<Direction>();
+            if (front != null) order.add(front);
+            for (var d : Direction.Plane.HORIZONTAL) if (!order.contains(d)) order.add(d);
+            for (var d : order) {
+                var pos = base.relative(d);
+                var state = level.getBlockState(pos);
+                if (state.getBlock() instanceof WallSignBlock && state.getValue(WallSignBlock.FACING) == d) consider(level, pos, taken, out, max);
+            }
+        }
+        for (var base : unit.positions()) {
+            var pos = base.above();
+            if (level.getBlockState(pos).getBlock() instanceof SignBlock) consider(level, pos, taken, out, max);
         }
         return out;
     }
     private static void consider(Level level, BlockPos pos, Set<BlockPos> taken, List<BlockPos> out, int max) {
         if (out.size() >= max || taken.contains(pos) || out.contains(pos)) return;
-        if (level.getBlockState(pos).getBlock() instanceof SignBlock && level.getBlockEntity(pos) instanceof SignBlockEntity) {
+        if (level.getBlockEntity(pos) instanceof SignBlockEntity) {
             var p = pos.immutable();
             out.add(p); taken.add(p);
         }
