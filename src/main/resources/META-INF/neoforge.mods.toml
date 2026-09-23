@@ -6,7 +6,9 @@ modId="warehousemanager"
 version="${version}"
 displayName="Warehouse Manager"
 authors="Rusty Shackleford and nfx"
-description="A block that finds every chest in its building, sorts them into sensible groups and labels them with signs."
+description="A block that finds every chest in its building, sorts them into sensible groups, labels them with signs, and lets crafting tables in the building draw on them."
+[[mixins]]
+config="warehousemanager.mixins.json"
 [[dependencies.warehousemanager]]
 modId="neoforge"
 type="required"

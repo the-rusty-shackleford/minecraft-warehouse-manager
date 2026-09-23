@@ -56,7 +56,7 @@ public final class ManagerBlockEntity extends BlockEntity {
     private boolean noWall;
     private Planner.Plan plan = Planner.Plan.empty();
     private Map<String, String> labels = new HashMap<>();
-    private FloodFill fill;
+    private FloodFill fill, lastFill;
     private int rescanIn = 1, unitCursor, slotCursor, movesThisPass, waiting;
     private String waitingNode;
     private boolean settled, scanned, registered;
@@ -78,6 +78,17 @@ public final class ManagerBlockEntity extends BlockEntity {
     public boolean covers(BlockPos pos) {
         return min != null && pos.getX() >= min.getX() - 1 && pos.getX() <= max.getX() + 1 && pos.getY() >= min.getY() - 1
                 && pos.getY() <= max.getY() + 1 && pos.getZ() >= min.getZ() - 1 && pos.getZ() <= max.getZ() + 1;
+    }
+    /** effects: whether the last scan walked through the position or a block touching it: the
+     * building proper, including the solid blocks that line its rooms such as a crafting table. */
+    public boolean contains(BlockPos pos) {
+        if (lastFill == null || !covers(pos)) return false;
+        if (lastFill.contains(pos.getX(), pos.getY(), pos.getZ())) return true;
+        for (var d : Direction.values()) {
+            var n = pos.relative(d);
+            if (covers(n) && lastFill.contains(n.getX(), n.getY(), n.getZ())) return true;
+        }
+        return false;
     }
     /** effects: schedules a rescan within two ticks unless one is running. */
     public void rescanSoon() { if (fill == null) rescanIn = Math.min(rescanIn, 2); }
@@ -143,6 +154,7 @@ public final class ManagerBlockEntity extends BlockEntity {
                 found.putIfAbsent(unit.primary().asLong(), unit);
             } else if (state.isAir() && spotList.size() < MAX_SPOTS * 4) spot(sl, x, y, z, cursor, spotList);
         });
+        lastFill = fill;
         fill = null;
         spotList.sort(Comparator.comparingInt(s -> (int) s.pos().distSqr(worldPosition)));
         spots = List.copyOf(spotList.subList(0, Math.min(MAX_SPOTS, spotList.size())));

@@ -30,7 +30,7 @@ import java.util.function.Consumer;
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
 public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
-    private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2);
+    private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2), TABLE = new BlockPos(3, 100, 3);
     private static int tick;
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         if (!Boolean.getBoolean("warehousemanager.booth")) return;
@@ -76,16 +76,47 @@ public final class WarehouseBooth {
                 }); }
                 case 205 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
                 case 225 -> { check(mc.screen instanceof ContainerScreen, "manager opens the vanilla chest screen"); photo(mc, "04-manager-screen"); }
-                case 235 -> { mc.player.closeContainer(); server(mc, p -> { hut(p.serverLevel()); p.teleportTo(p.serverLevel(), 13.5, 100, 2.5, 180, 12); }); }
-                case 335 -> server(mc, p -> {
+                case 235 -> { mc.player.closeContainer();
+                    server(mc, p -> { p.serverLevel().setBlock(TABLE, Blocks.CRAFTING_TABLE.defaultBlockState(), 3); p.getInventory().clearContent();
+                        // The book's open and filter flags live on the server's copy and travel to the client with the award below.
+                        p.getRecipeBook().setBookSetting(net.minecraft.world.inventory.RecipeBookType.CRAFTING, true, true);
+                        p.awardRecipes(java.util.List.of(p.server.getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stick")).orElseThrow()));
+                        p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))); }); }
+                case 265 -> {
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "crafting table screen open");
+                    var sticks = mc.player.getRecipeBook().getCollections().stream().filter(c -> c.getRecipes().stream().anyMatch(r -> r.id().getPath().equals("stick"))).findFirst().orElseThrow();
+                    if (!sticks.hasCraftable()) {
+                        var stick = sticks.getRecipes().stream().filter(r -> r.id().getPath().equals("stick")).findFirst().orElseThrow();
+                        var probe = new net.minecraft.world.entity.player.StackedContents();
+                        mc.player.getInventory().fillStackedContents(probe);
+                        Pooled.Tally.account(mc.player.containerMenu.containerId, probe);
+                        throw new IllegalStateException("sticks not craftable: tally=" + Pooled.Tally.describe() + " menu=" + mc.player.containerMenu.containerId
+                                + " known=" + mc.player.getRecipeBook().contains(stick) + " fitting=" + sticks.hasFitting() + " knownRecipes=" + sticks.hasKnownRecipes()
+                                + " probeCanCraft=" + probe.canCraft(stick.value(), null) + " visible=" + ((net.minecraft.client.gui.screens.inventory.CraftingScreen) mc.screen).getRecipeBookComponent().isVisible()
+                                + " filtering=" + mc.player.getRecipeBook().isFiltering(net.minecraft.world.inventory.RecipeBookType.CRAFTING));
+                    }
+                    check(sticks.hasCraftable(), "sticks read as craftable from the building's planks with an empty inventory");
+                    photo(mc, "06-recipe-book-pooled");
+                    var stick = sticks.getRecipes().stream().filter(r -> r.id().getPath().equals("stick")).findFirst().orElseThrow();
+                    mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, stick, false);
+                }
+                case 290 -> {
+                    int planks = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.OAK_PLANKS)) planks += mc.player.containerMenu.getSlot(i).getItem().getCount();
+                    check(planks == 2, "recipe placed with two planks drawn from the chests, got " + planks);
+                    photo(mc, "07-recipe-placed-from-chests");
+                    mc.player.closeContainer();
+                }
+                case 300 -> server(mc, p -> { hut(p.serverLevel()); p.teleportTo(p.serverLevel(), 13.5, 100, 2.5, 180, 12); });
+                case 400 -> server(mc, p -> {
                     var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(HUT_MANAGER);
                     check(m != null && m.settled(), "hut manager settled");
                     check(m.units().size() == 6, "six chests stood from the buffer, got " + m.units().size());
                     check(m.buffer().isEmpty(), "every chest item used");
                     LOG.info("warehousemanager booth: hut labels {}", m.plan().labels());
                 });
-                case 340 -> photo(mc, "05-furnished-hut");
-                case 345 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                case 405 -> photo(mc, "05-furnished-hut");
+                case 410 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }

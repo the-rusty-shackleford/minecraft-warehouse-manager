@@ -17,6 +17,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.TagsUpdatedEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.*;
 
 /** Composition root: one block, its item and block entity, and the world events that trigger a
@@ -46,5 +48,7 @@ public final class WarehouseManager {
         NeoForge.EVENT_BUS.addListener((TagsUpdatedEvent e) -> Facts.clear());
         NeoForge.EVENT_BUS.addListener((BlockEvent.EntityPlaceEvent e) -> Managers.blockChanged(e.getLevel(), e.getPos(), e.getPlacedBlock()));
         NeoForge.EVENT_BUS.addListener((BlockEvent.BreakEvent e) -> Managers.blockChanged(e.getLevel(), e.getPos(), e.getState()));
+        NeoForge.EVENT_BUS.addListener(Pooled::opened);
+        bus.addListener((RegisterPayloadHandlersEvent e) -> e.registrar("1").playToClient(Pooled.Contents.TYPE, Pooled.Contents.CODEC, (p, ctx) -> Pooled.Tally.set(p.containerId(), p.counts())));
     }
 }

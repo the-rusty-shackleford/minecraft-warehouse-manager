@@ -38,6 +38,13 @@ final class Managers {
         var claims = CLAIMS.get(m.getLevel());
         if (claims != null) claims.values().removeIf(p -> p.equals(m.getBlockPos()));
     }
+    /** effects: the loaded manager whose building contains the position, or null. */
+    static synchronized ManagerBlockEntity covering(LevelAccessor level, BlockPos pos) {
+        var set = LOADED.get(level);
+        if (set == null) return null;
+        for (var m : set) if (!m.isRemoved() && m.contains(pos)) return m;
+        return null;
+    }
     /** effects: asks every manager whose building contains the position to rescan when a managed
      * container or a sign was placed or broken there. */
     static synchronized void blockChanged(LevelAccessor level, BlockPos pos, BlockState state) {

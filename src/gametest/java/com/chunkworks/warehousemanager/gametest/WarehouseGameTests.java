@@ -16,7 +16,7 @@ import net.minecraft.world.level.block.state.properties.ChestType;
 import net.neoforged.neoforge.gametest.*;
 import java.util.*;
 
-/** Real-server partitions: an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
+/** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
  * every container labelled; a chest outside the walls is untouched; the buffer routes to the
  * right container; an existing sign is rewritten, not duplicated; a double chest gets title and
@@ -262,6 +262,46 @@ public final class WarehouseGameTests {
             h.assertTrue(text(top).contains(upperTitle), "the sign above the upper chest labels it: " + text(top));
             h.assertTrue(!(h.getLevel().getBlockState(h.absolutePos(lower.west())).getBlock() instanceof WallSignBlock)
                     && !(h.getLevel().getBlockState(h.absolutePos(upper.west())).getBlock() instanceof WallSignBlock), "no extra signs conjured on the fronts");
+        });
+    }
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void craftingTableDrawsIngredientsFromTheBuilding(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.OAK_PLANKS, 16);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            h.assertTrue(m.contains(h.absolutePos(table)), "the table stands in the building");
+            var player = h.makeMockServerPlayerInLevel();
+            player.getInventory().clearContent();
+            // The embedded GameTest connection skips channel negotiation; declare the tally channel.
+            net.neoforged.neoforge.network.registration.ChannelAttributes.getOrCreateAdHocChannels(player.connection.getConnection()).add(Pooled.Contents.TYPE.id());
+            var menu = new net.minecraft.world.inventory.CraftingMenu(7, player.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var stick = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stick")).orElseThrow();
+            player.awardRecipes(List.of(stick));
+            menu.handlePlacement(false, stick, player);
+            int inGrid = 0;
+            for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.OAK_PLANKS)) inGrid += menu.getSlot(i).getItem().getCount();
+            h.assertTrue(inGrid == 2, "two planks placed from the chest, got " + inGrid);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "chest debited to 14, got " + chestAt(h, chestPos).getItem(0).getCount());
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.STICK) && menu.getSlot(0).getItem().getCount() == 4, "result slot shows four sticks");
+            menu.quickMoveStack(player, 0);
+            int sticks = 0, planks = 0;
+            for (var s : player.getInventory().items) { if (s.is(Items.STICK)) sticks += s.getCount(); if (s.is(Items.OAK_PLANKS)) planks += s.getCount(); }
+            h.assertTrue(sticks == 4 && planks == 0, "crafting consumed the drawn planks: sticks " + sticks + " planks " + planks);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "chest still 14 after the craft");
+            var outside = new BlockPos(15, 2, 15);
+            h.setBlock(outside, Blocks.CRAFTING_TABLE);
+            h.assertTrue(!m.contains(h.absolutePos(outside)), "a table outside the walls is not in the building");
+            player.containerMenu = new net.minecraft.world.inventory.CraftingMenu(8, player.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(outside)));
+            ((net.minecraft.world.inventory.CraftingMenu) player.containerMenu).handlePlacement(false, stick, player);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "an outside table draws nothing");
+            h.succeed();
         });
     }
     @GameTest(template = "house", timeoutTicks = 200, skyAccess = true) public void breakingTheManagerSpillsItsBuffer(GameTestHelper h) {

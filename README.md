@@ -58,6 +58,18 @@ followed by a rescan, so the new container is labelled and filled like any other
 items it has no use for are stored like any other item. Right-click reports "no free wall
 space" when the walls are full.
 
+## Crafting from the building
+
+Open a crafting table that stands inside a managed building and the recipe book counts the
+building's chests as yours: with the "craftable" filter on, recipes you could make from the
+warehouse light up alongside those you could make from your pockets. Click one and the
+manager draws the shortfall out of the chests into your inventory, exactly what that click
+needs (one craft, or as many as the building and you together allow for a shift-click),
+before the grid fills as usual; crafting then consumes it, so the chests are debited by
+what you made. Close the table without crafting and the drawn ingredients stay with you.
+Tables outside the building's walls, and the inventory's own 2x2 grid, are unaffected. As
+always, the book shows only recipes you have unlocked; the warehouse does not unlock them.
+
 **Existing contents move.** That is the point of placing the block, and it will surprise anyone
 sharing the building who did not expect their sorting to change.
 
@@ -99,10 +111,11 @@ build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
-**0.1.1**: overflow containers and sibling groups are placed next to each other (0.1.0 chose
-them by distance from the manager, which could put "Food 1/2" and "Food 2/2" at opposite
-ends of a building), and an empty building is furnished from chest items dropped into the
-manager. Download from
+**0.2.0**: crafting tables in the building draw on its chests; overflow containers and
+sibling groups are placed next to each other (0.1.0 chose them by distance from the manager,
+which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an empty building
+is furnished from chest items dropped into the manager; each container keeps only its own
+signs (stacked chests had shared one). Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 34 JUnit tests, 8 real-server GameTests and the photo booth; see
+Verified: 39 JUnit tests, 10 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).
