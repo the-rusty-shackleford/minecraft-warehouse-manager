@@ -5,5 +5,6 @@
   "warehousemanager.status.idle": "Warehouse Manager: %s containers managed, everything in its place.",
   "warehousemanager.status.sorting": "Warehouse Manager: %s containers managed, sorting…",
   "warehousemanager.status.waiting": "Warehouse Manager: %s stacks waiting, no room in %s.",
-  "warehousemanager.status.none": "Warehouse Manager: no containers found in this building."
+  "warehousemanager.status.none": "Warehouse Manager: no containers found in this building. Drop chests in and it will stand them along the walls.",
+  "warehousemanager.status.nowall": "Warehouse Manager: no free wall space for another chest."
 }

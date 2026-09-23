@@ -21,7 +21,10 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
 
 Rusty's first-evening report: "Food 1/2" and "Food 2/2" ended up apart. The planner now
 knows where containers stand and clusters a group's containers and sibling groups
-(D-0002). Three planner tests pin it.
+(D-0002). Three planner tests pin it. The same evening a bare dirt hut with no chests did
+nothing, as designed; Rusty expected chests to appear. Chest items dropped into the manager
+now furnish the building (D-0003): wall spots from the scan, a domain rule for whether one
+more container earns its place, a double beside a crowded group.
 
 ## Status
 

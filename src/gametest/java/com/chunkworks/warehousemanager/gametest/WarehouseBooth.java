@@ -30,7 +30,7 @@ import java.util.function.Consumer;
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
 public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
-    private static final BlockPos MANAGER = new BlockPos(0, 100, 5);
+    private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2);
     private static int tick;
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
         if (!Boolean.getBoolean("warehousemanager.booth")) return;
@@ -76,7 +76,16 @@ public final class WarehouseBooth {
                 }); }
                 case 205 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
                 case 225 -> { check(mc.screen instanceof ContainerScreen, "manager opens the vanilla chest screen"); photo(mc, "04-manager-screen"); }
-                case 235 -> { mc.player.closeContainer(); LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                case 235 -> { mc.player.closeContainer(); server(mc, p -> { hut(p.serverLevel()); p.teleportTo(p.serverLevel(), 13.5, 100, 2.5, 180, 12); }); }
+                case 335 -> server(mc, p -> {
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(HUT_MANAGER);
+                    check(m != null && m.settled(), "hut manager settled");
+                    check(m.units().size() == 6, "six chests stood from the buffer, got " + m.units().size());
+                    check(m.buffer().isEmpty(), "every chest item used");
+                    LOG.info("warehousemanager booth: hut labels {}", m.plan().labels());
+                });
+                case 340 -> photo(mc, "05-furnished-hut");
+                case 345 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }
@@ -109,6 +118,19 @@ public final class WarehouseBooth {
         l.setBlock(new BlockPos(-5, 100, 0), east.setValue(ChestBlock.TYPE, ChestType.RIGHT), 3);
         var d = ChestBlock.getContainer((ChestBlock) east.getBlock(), l.getBlockState(new BlockPos(-5, 100, 0)), l, new BlockPos(-5, 100, 0), true);
         d.setItem(0, new ItemStack(Items.GLASS, 10)); d.setItem(1, new ItemStack(Items.EMERALD, 3)); d.setItem(2, new ItemStack(Items.GRAVEL, 20));
+    }
+    /** effects: a bare 5x5 stone hut east of the room with a lit ceiling and the manager holding
+     * six chest items and nothing else. */
+    private static void hut(ServerLevel l) {
+        for (int x = 10; x <= 16; x++) for (int z = -3; z <= 3; z++) for (int y = 99; y <= 104; y++) {
+            boolean shell = x == 10 || x == 16 || z == -3 || z == 3 || y == 99 || y == 104;
+            l.setBlock(new BlockPos(x, y, z), shell ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 3);
+        }
+        l.setBlock(new BlockPos(13, 104, 0), Blocks.GLOWSTONE.defaultBlockState(), 3);
+        l.setBlock(new BlockPos(11, 104, -2), Blocks.GLOWSTONE.defaultBlockState(), 3);
+        l.setBlock(new BlockPos(15, 104, 2), Blocks.GLOWSTONE.defaultBlockState(), 3);
+        l.setBlock(HUT_MANAGER, WarehouseManager.BLOCK.get().defaultBlockState(), 3);
+        ((ManagerBlockEntity) l.getBlockEntity(HUT_MANAGER)).buffer().setItem(0, new ItemStack(Items.CHEST, 6));
     }
     private static void server(Minecraft mc, Consumer<ServerPlayer> action) {
         var server = mc.getSingleplayerServer(); var id = mc.player.getUUID();

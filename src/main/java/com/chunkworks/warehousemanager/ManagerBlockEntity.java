@@ -3,6 +3,12 @@ package com.chunkworks.warehousemanager;
 
 import com.chunkworks.warehousemanager.domain.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -36,12 +42,18 @@ public final class ManagerBlockEntity extends BlockEntity {
     public record Unit(String id, BlockPos primary, List<BlockPos> positions) {
         public Unit { positions = List.copyOf(positions); }
     }
-    static final int BUDGET = 20_000, CELLS_PER_TICK = 512, RESCAN_TICKS = 200, MOVES_PER_TICK = 4, LOOKS_PER_TICK = 32;
+    /** A free floor cell against a wall where a container could stand, facing into the room. */
+    public record Spot(BlockPos pos, Direction facing) {}
+    static final int BUDGET = 20_000, CELLS_PER_TICK = 512, RESCAN_TICKS = 200, MOVES_PER_TICK = 4, LOOKS_PER_TICK = 32, MAX_SPOTS = 512;
     private static final Component TITLE = Component.translatable("container.warehousemanager.manager");
     private final SimpleContainer buffer = new SimpleContainer(54) {
         @Override public boolean stillValid(Player player) { return Container.stillValidBlockEntity(ManagerBlockEntity.this, player); }
     };
     private List<Unit> units = List.of();
+    private List<Spot> spots = List.of();
+    private List<Planner.Chest> lastChests = List.of();
+    private Map<String, Integer> lastDemand = Map.of();
+    private boolean noWall;
     private Planner.Plan plan = Planner.Plan.empty();
     private Map<String, String> labels = new HashMap<>();
     private FloodFill fill;
@@ -81,6 +93,7 @@ public final class ManagerBlockEntity extends BlockEntity {
     /** effects: a status line for the action bar. */
     public Component status() {
         if (fill != null) return Component.translatable("warehousemanager.status.scanning");
+        if (noWall) return Component.translatable("warehousemanager.status.nowall");
         if (units.isEmpty()) return Component.translatable("warehousemanager.status.none");
         if (waiting > 0) return Component.translatable("warehousemanager.status.waiting", waiting, title(waitingNode));
         return Component.translatable(settled ? "warehousemanager.status.idle" : "warehousemanager.status.sorting", units.size());
@@ -96,6 +109,7 @@ public final class ManagerBlockEntity extends BlockEntity {
         if (!registered) { Managers.add(this); registered = true; }
         if (fill != null) { if (fill.step(CELLS_PER_TICK)) finishScan(sl); return; }
         if (--rescanIn <= 0) { startScan(sl); return; }
+        if (furnish(sl)) return;
         if (settled || plan.cut().isEmpty()) return;
         int moves = drain(sl);
         if (moves < MOVES_PER_TICK) sortPass(sl, moves);
@@ -118,16 +132,20 @@ public final class ManagerBlockEntity extends BlockEntity {
         int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         int[] hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
         var cursor = new BlockPos.MutableBlockPos();
+        var spotList = new ArrayList<Spot>();
         fill.forEach((x, y, z) -> {
             lo[0] = Math.min(lo[0], x); lo[1] = Math.min(lo[1], y); lo[2] = Math.min(lo[2], z);
             hi[0] = Math.max(hi[0], x); hi[1] = Math.max(hi[1], y); hi[2] = Math.max(hi[2], z);
             cursor.set(x, y, z);
             var state = sl.getBlockState(cursor);
-            if (!state.is(WarehouseManager.MANAGED)) return;
-            var unit = unitAt(sl, cursor.immutable(), state);
-            found.putIfAbsent(unit.primary().asLong(), unit);
+            if (state.is(WarehouseManager.MANAGED)) {
+                var unit = unitAt(sl, cursor.immutable(), state);
+                found.putIfAbsent(unit.primary().asLong(), unit);
+            } else if (state.isAir() && spotList.size() < MAX_SPOTS * 4) spot(sl, x, y, z, cursor, spotList);
         });
         fill = null;
+        spotList.sort(Comparator.comparingInt(s -> (int) s.pos().distSqr(worldPosition)));
+        spots = List.copyOf(spotList.subList(0, Math.min(MAX_SPOTS, spotList.size())));
         rescanIn = RESCAN_TICKS;
         if (!found.isEmpty()) { min = new BlockPos(lo[0], lo[1], lo[2]); max = new BlockPos(hi[0], hi[1], hi[2]); }
         else { min = worldPosition; max = worldPosition; }
@@ -152,12 +170,112 @@ public final class ManagerBlockEntity extends BlockEntity {
             chests.add(new Planner.Chest(u.id(), c.getContainerSize(), held, u.primary().getX(), u.primary().getY(), u.primary().getZ()));
         }
         for (int i = 0; i < buffer.getContainerSize(); i++) if (!buffer.getItem(i).isEmpty()) demand.merge(Facts.leaf(buffer.getItem(i)), 1, Integer::sum);
+        lastChests = List.copyOf(chests);
+        lastDemand = Map.copyOf(demand);
         plan = Planner.plan(Taxonomy.STANDARD, chests, demand, labels);
         labels = new HashMap<>();
         for (var e : plan.labels().entrySet()) labels.put(e.getKey(), e.getValue().node());
         label(sl);
         scanned = true; settled = false; unitCursor = 0; slotCursor = 0; movesThisPass = 0;
         setChanged();
+    }
+
+    /** effects: records the cell as a spot when it stands on a full block against a full-block wall
+     * with the opposite side open and no door beside it. */
+    private static void spot(ServerLevel sl, int x, int y, int z, BlockPos.MutableBlockPos cursor, List<Spot> out) {
+        cursor.set(x, y - 1, z);
+        if (!sl.getBlockState(cursor).isCollisionShapeFullBlock(sl, cursor)) return;
+        for (var d : Direction.Plane.HORIZONTAL) {
+            cursor.set(x + d.getStepX(), y, z + d.getStepZ());
+            if (sl.getBlockState(cursor).getBlock() instanceof DoorBlock) return;
+        }
+        for (var d : Direction.Plane.HORIZONTAL) {
+            cursor.set(x + d.getStepX(), y, z + d.getStepZ());
+            if (!sl.getBlockState(cursor).isCollisionShapeFullBlock(sl, cursor)) continue;
+            var open = d.getOpposite();
+            cursor.set(x + open.getStepX(), y, z + open.getStepZ());
+            if (!sl.getBlockState(cursor).isAir()) continue;
+            out.add(new Spot(new BlockPos(x, y, z), open));
+            return;
+        }
+    }
+    /** effects: whether the spot is still air on a full block, backed by a full block, open in front. */
+    private static boolean valid(Level lvl, Spot s) {
+        var wall = s.pos().relative(s.facing().getOpposite());
+        var below = s.pos().below();
+        return lvl.getBlockState(s.pos()).isAir() && lvl.getBlockState(s.pos().relative(s.facing())).isAir()
+                && lvl.getBlockState(wall).isCollisionShapeFullBlock(lvl, wall) && lvl.getBlockState(below).isCollisionShapeFullBlock(lvl, below);
+    }
+    /** effects: whether the stack is a chest, trapped chest, barrel or other managed container item. */
+    static boolean isContainerItem(ItemStack stack) {
+        return stack.getItem() instanceof BlockItem b && b.getBlock().defaultBlockState().is(WarehouseManager.MANAGED);
+    }
+
+    /** effects: stands one container from the buffer's chest or barrel items on a free wall spot when
+     * the plan would gain a group, or a double beside a crowded group; returns whether it did. Items
+     * it does not want stay for routing like any other. */
+    private boolean furnish(ServerLevel sl) {
+        if (!scanned) return false;
+        int slot = -1;
+        for (int i = 0; i < buffer.getContainerSize() && slot < 0; i++) if (isContainerItem(buffer.getItem(i))) slot = i;
+        if (slot < 0) { noWall = false; return false; }
+        Spot first = null;
+        for (var s : spots) if (valid(sl, s)) { first = s; break; }
+        if (first == null) { noWall = true; return false; }
+        noWall = false;
+        var stack = buffer.getItem(slot);
+        var block = ((BlockItem) stack.getItem()).getBlock();
+        var probe = new Planner.Chest("?", 27, Map.of(), first.pos().getX(), first.pos().getY(), first.pos().getZ());
+        var decision = Furnishing.decide(Taxonomy.STANDARD, lastChests, lastDemand, labels, probe);
+        if (decision.want() == Furnishing.Want.NONE) return false;
+        var spot = first;
+        Spot partner = null;
+        if (decision.want() == Furnishing.Want.DOUBLE) {
+            var beside = nearest(sl, decision.node());
+            if (beside != null) spot = beside;
+            if (block instanceof ChestBlock && stack.getCount() >= 2) partner = partner(sl, spot);
+        }
+        place(sl, spot, block, partner);
+        stack.shrink(partner == null ? 1 : 2);
+        if (stack.isEmpty()) buffer.setItem(slot, ItemStack.EMPTY); else buffer.setChanged();
+        rescanSoon();
+        return true;
+    }
+    /** effects: the valid spot nearest the node's containers, or null. */
+    private Spot nearest(ServerLevel sl, String node) {
+        Spot best = null;
+        long bestD = Long.MAX_VALUE;
+        for (var s : spots) {
+            if (!valid(sl, s)) continue;
+            for (var c : lastChests) {
+                if (!node.equals(labels.get(c.id()))) continue;
+                long dx = c.x() - s.pos().getX(), dy = c.y() - s.pos().getY(), dz = c.z() - s.pos().getZ();
+                long d = dx * dx + dy * dy + dz * dz;
+                if (d < bestD) { bestD = d; best = s; }
+            }
+        }
+        return best;
+    }
+    /** effects: a valid spot beside the given one along its wall with the same facing, or null. */
+    private Spot partner(ServerLevel sl, Spot spot) {
+        for (var side : new Direction[] { spot.facing().getClockWise(), spot.facing().getCounterClockWise() }) {
+            var p = spot.pos().relative(side);
+            for (var s : spots) if (s.pos().equals(p) && s.facing() == spot.facing() && valid(sl, s)) return s;
+        }
+        return null;
+    }
+    /** effects: sets the container block at the spot facing into the room, paired with the partner
+     * as a double chest when given, with its placing sound. */
+    private static void place(ServerLevel sl, Spot spot, Block block, Spot partner) {
+        var state = block.defaultBlockState();
+        if (state.hasProperty(ChestBlock.FACING)) state = state.setValue(ChestBlock.FACING, spot.facing());
+        else if (state.hasProperty(BarrelBlock.FACING)) state = state.setValue(BarrelBlock.FACING, spot.facing());
+        if (partner != null && state.hasProperty(ChestBlock.TYPE)) {
+            boolean left = spot.pos().relative(spot.facing().getClockWise()).equals(partner.pos());
+            sl.setBlock(spot.pos(), state.setValue(ChestBlock.TYPE, left ? ChestType.LEFT : ChestType.RIGHT), 3);
+            sl.setBlock(partner.pos(), state.setValue(ChestBlock.TYPE, left ? ChestType.RIGHT : ChestType.LEFT), 3);
+        } else sl.setBlock(spot.pos(), state, 3);
+        sl.playSound(null, spot.pos(), state.getSoundType().getPlaceSound(), SoundSource.BLOCKS, 1f, 1f);
     }
 
     /** effects: the unit at a managed block; a chest half whose partner is missing, of the same

@@ -44,6 +44,18 @@ It rescans every ten seconds, and at once when a container or sign is placed or 
 building. Anything you put in the manager's own six-row inventory is routed the same way; what
 has no room stays visible there, and right-clicking the block shows why on the action bar.
 
+## Furnishing an empty room
+
+A building with no containers gets none until you provide them: drop chest items (or
+trapped chests, or barrels) into the manager and it stands them along the walls, one at a
+time, on floor cells backed by a full block with the open side clear and no door beside
+them, nearest the manager first, facing into the room. It places a container only while
+doing so gains a labelled group or relieves a group over 90 percent full, in which case
+two chest items become a double chest beside that group's containers. Each placement is
+followed by a rescan, so the new container is labelled and filled like any other. Chest
+items it has no use for are stored like any other item. Right-click reports "no free wall
+space" when the walls are full.
+
 **Existing contents move.** That is the point of placing the block, and it will surprise anyone
 sharing the building who did not expect their sorting to change.
 
@@ -85,9 +97,10 @@ build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
-**0.1.1**: overflow containers and sibling groups are placed next to each other; 0.1.0 chose
+**0.1.1**: overflow containers and sibling groups are placed next to each other (0.1.0 chose
 them by distance from the manager, which could put "Food 1/2" and "Food 2/2" at opposite
-ends of a building. Download from
+ends of a building), and an empty building is furnished from chest items dropped into the
+manager. Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 30 JUnit tests, 7 real-server GameTests and the photo booth; see
+Verified: 34 JUnit tests, 8 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).
