@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PBP",
+    "ICI",
+    "PRP"
+  ],
+  "key": {
+    "P": { "item": "minecraft:paper" },
+    "B": { "item": "minecraft:book" },
+    "I": { "item": "minecraft:iron_ingot" },
+    "C": { "item": "minecraft:chest" },
+    "R": { "item": "minecraft:redstone" }
+  },
+  "result": { "id": "warehousemanager:warehouse_manager", "count": 1 }
+}

@@ -1,0 +1,9 @@
+{
+  "block.warehousemanager.warehouse_manager": "Warehouse Manager",
+  "container.warehousemanager.manager": "Warehouse Manager",
+  "warehousemanager.status.scanning": "Warehouse Manager: mapping the building…",
+  "warehousemanager.status.idle": "Warehouse Manager: %s containers managed, everything in its place.",
+  "warehousemanager.status.sorting": "Warehouse Manager: %s containers managed, sorting…",
+  "warehousemanager.status.waiting": "Warehouse Manager: %s stacks waiting, no room in %s.",
+  "warehousemanager.status.none": "Warehouse Manager: no containers found in this building."
+}

@@ -1,0 +1,21 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="AGPL-3.0-or-later"
+[[mods]]
+modId="warehousemanager"
+version="${version}"
+displayName="Warehouse Manager"
+authors="Rusty Shackleford and nfx"
+description="A block that finds every chest in its building, sorts them into sensible groups and labels them with signs."
+[[dependencies.warehousemanager]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.248,)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.warehousemanager]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"

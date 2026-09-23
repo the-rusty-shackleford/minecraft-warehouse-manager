@@ -1,0 +1,108 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.144'
+}
+version = mod_version
+group = 'com.chunkworks.warehousemanager'
+base { archivesName = 'warehousemanager' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+repositories { mavenCentral() }
+sourceSets { domain; gametest }
+def verificationDirectories = [file('run/config'), file('run/booth/config')]
+def boothDirectory = file('run/booth')
+def gameTestLog = file('run/logs/latest.log')
+def boothLog = file('run/booth/logs/latest.log')
+var resetWorld = tasks.register('resetGameTestWorld', Delete) { delete 'run/world' }
+var verification = tasks.register('prepareVerification') {
+    doLast {
+        new File('run/server.properties').with { if (!exists()) text = 'max-tick-time=0\n' }
+        verificationDirectories.each { config ->
+            config.mkdirs()
+            new File(config, 'fml.toml').text = 'disableConfigWatcher=true\nearlyWindowControl=false\n'
+        }
+    }
+}
+var structures = tasks.register('copyGameTestStructures', Copy) {
+    from 'devtools/gameteststructures'
+    into 'run/gameteststructures'
+}
+var boothWorld = tasks.register('prepareBoothWorld', Sync) {
+    from 'run/world'
+    into 'run/booth/saves/booth'
+    exclude 'session.lock'
+    doLast {
+        def directory = boothDirectory
+        directory.mkdirs()
+        new File(directory, 'options.txt').text = 'onboardAccessibility:false\nnarrator:0\nsoundCategory_master:0.0\npauseOnLostFocus:false\nrenderDistance:6\nsimulationDistance:5\nmaxFps:120\nguiScale:2\ntutorialStep:none\n'
+    }
+}
+neoForge {
+    version = '21.1.248'
+    parchment { minecraftVersion = '1.21.1'; mappingsVersion = '2024.11.17' }
+    runs {
+        client { client() }
+        server { server(); programArgument '--nogui' }
+        gameTestServer {
+            type = 'gameTestServer'
+            sourceSet = sourceSets.gametest
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'warehousemanager'
+            taskBefore structures
+            taskBefore resetWorld
+            taskBefore verification
+        }
+        photoBooth {
+            client()
+            sourceSet = sourceSets.gametest
+            gameDirectory = file('run/booth')
+            systemProperty 'warehousemanager.booth', 'true'
+            programArguments.addAll('--quickPlaySingleplayer', 'booth', '--width', '1280', '--height', '720')
+            taskBefore boothWorld
+            taskBefore verification
+        }
+        configureEach { logLevel = org.slf4j.event.Level.INFO }
+    }
+    mods {
+        warehousemanager { sourceSet(sourceSets.domain); sourceSet(sourceSets.main) }
+        warehousemanager_gametest { sourceSet(sourceSets.gametest) }
+    }
+    addModdingDependenciesTo(sourceSets.gametest)
+}
+neoForge.runs.matching { !(it.name in ['gameTestServer', 'photoBooth']) }.configureEach {
+    loadedMods = neoForge.mods.matching { it.name != 'warehousemanager_gametest' }
+}
+dependencies {
+    implementation sourceSets.domain.output
+    gametestImplementation sourceSets.main.output
+    gametestImplementation sourceSets.domain.output
+    testImplementation sourceSets.domain.output
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.9.2'
+}
+tasks.named('test', Test) { useJUnitPlatform() }
+jar { from sourceSets.domain.output }
+def releaseVersion = version.toString()
+tasks.named('processResources') {
+    inputs.property 'version', releaseVersion
+    filesMatching('META-INF/neoforge.mods.toml') { expand version: releaseVersion }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.named('runGameTestServer') { task ->
+    doLast {
+        def log = gameTestLog.text
+        def passed = log =~ /All (\d+) required tests passed/
+        if (!passed.find() || log.contains('Mod loading has failed')) throw new GradleException('GameTests failed; see run/logs/latest.log')
+        task.logger.lifecycle('GameTests: ' + passed.group(1) + ' passed')
+    }
+}
+tasks.named('runPhotoBooth') {
+    mustRunAfter 'runGameTestServer'
+    doLast {
+        def log = boothLog.text
+        if (!log.contains('warehousemanager booth: COMPLETE') || log.contains('warehousemanager booth: FAIL')) throw new GradleException('Warehouse Manager booth failed')
+    }
+}
+tasks.named('prepareBoothWorld') { mustRunAfter 'runGameTestServer' }
+tasks.named('check') {
+    if (!project.hasProperty('skipGameTests')) dependsOn 'runGameTestServer'
+    if (!project.hasProperty('skipBooth')) dependsOn 'runPhotoBooth'
+}
