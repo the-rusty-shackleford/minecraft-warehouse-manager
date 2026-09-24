@@ -9,7 +9,9 @@ loaded cursor inserts), and one Insert slot that sinks into the buffer. Rusty's 
 are in D-0009; the trie they floated is rejected there with the reason. Domain `Index` and
 `Take` (JUnit), server `Index` (payloads, tally, pick, refresh every second),
 `ManagerBlockEntity.pull`, `ManagerMenu` rewritten over one slot, `ManagerScreen` redrawn.
-Three GameTests and four booth photos.
+Three GameTests and four booth photos. Released as tag v0.4.0 (0.3.2 inside it, never
+tagged on its own) and deployed as pack 1.63.0 at 22:12 UTC on Rusty's "release it"; not yet
+seen by Rusty in play.
 
 0.3.2 (2026-09-24, late): Rusty's Engine prefilled all red and would not craft; the Engine
 needs a boiler and there was none anywhere, so the game's ghost was right but said nothing.

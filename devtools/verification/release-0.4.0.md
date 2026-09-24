@@ -38,6 +38,8 @@ Full `./gradlew clean build` on the release tree, Xephyr `:7`, llvmpipe, muted:
   trust panel beside. Not judged: the tooltip (the booth's mouse never rests on a cell).
 - Jar `warehousemanager-0.4.0.jar` sha1 `dd762b88458cfd528ef667acbd51e221119cfaef`
   (170429 bytes).
+- Released as tag v0.4.0 (the asset matches by sha1) and deployed as pack 1.63.0 at 22:12 UTC,
+  the server's copy matching by sha1, the log noting "warehousemanager (version 0.3.1 -> 0.4.0)".
 - Not verified: the screen at GUI scale 5 on Rusty's ultrawide (224 rows fit the 240 minimum,
   318 columns with the panel fit 320); a warehouse of hundreds of kinds (the listing is one
   packet; a few hundred rows is a few kilobytes); a real second player taking while the owner
