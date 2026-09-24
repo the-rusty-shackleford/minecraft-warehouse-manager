@@ -6,7 +6,9 @@ Version 0.3.1, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
 fill from the chests. Vanilla's recipe placement silently refuses a recipe the player has not
 unlocked, Immersive Aircraft ships no unlock advancements, and every test had awarded the stick
 recipe first. The pooled fill now unlocks the recipe at the fill, as crafting it by hand would,
-except under doLimitedCrafting (D-0007). GameTest added; 15 GameTests.
+except under doLimitedCrafting (D-0007). GameTest added; 15 GameTests. Released as tag v0.3.1
+and deployed as pack 1.62.2 at 20:51 UTC on Rusty's "Go, 2 min warning"; the propeller itself
+not yet seen filling on a live client.
 
 Rusty requested on 2026-09-22 a craftable **Warehouse Manager** block that, placed inside a
 building, tracks every chest in that building across its floors, organises their contents by
