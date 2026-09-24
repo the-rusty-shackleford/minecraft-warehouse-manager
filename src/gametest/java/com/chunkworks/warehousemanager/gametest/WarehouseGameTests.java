@@ -28,7 +28,8 @@ import net.neoforged.neoforge.gametest.*;
 import net.neoforged.neoforge.network.registration.ChannelAttributes;
 import java.util.*;
 
-/** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
+/** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; a recipe the
+ * player has not unlocked fills and is unlocked, unless doLimitedCrafting is on (D-0007); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
  * every container labelled; a chest outside the walls is untouched; the buffer routes to the
  * right container; an existing sign is rewritten, not duplicated; a double chest gets title and
@@ -318,6 +319,54 @@ public final class WarehouseGameTests {
             player.containerMenu = new net.minecraft.world.inventory.CraftingMenu(8, player.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(outside)));
             ((net.minecraft.world.inventory.CraftingMenu) player.containerMenu).handlePlacement(false, stick, player);
             h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "an outside table draws nothing");
+            h.succeed();
+        });
+    }
+    /** D-0007: a recipe the player has never unlocked (most modded recipes ship no unlock
+     * advancement) still fills from the building, and is unlocked by it; under doLimitedCrafting
+     * it stays locked and nothing is drawn. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void craftingTableFillsARecipeThePlayerHasNotUnlocked(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.OAK_PLANKS, 16);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var stick = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stick")).orElseThrow();
+            var rules = h.getLevel().getGameRules();
+            try {
+                var player = h.makeMockServerPlayerInLevel();
+                player.getInventory().clearContent();
+                net.neoforged.neoforge.network.registration.ChannelAttributes.getOrCreateAdHocChannels(player.connection.getConnection()).add(Pooled.Contents.TYPE.id());
+                h.assertTrue(!player.getRecipeBook().contains(stick), "a fresh player has not unlocked sticks");
+                var menu = new net.minecraft.world.inventory.CraftingMenu(9, player.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+                player.containerMenu = menu;
+                menu.handlePlacement(false, stick, player);
+                int inGrid = 0;
+                for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.OAK_PLANKS)) inGrid += menu.getSlot(i).getItem().getCount();
+                h.assertTrue(inGrid == 2, "two planks placed from the chest for a locked recipe, got " + inGrid);
+                h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "chest debited to 14, got " + chestAt(h, chestPos).getItem(0).getCount());
+                h.assertTrue(player.getRecipeBook().contains(stick), "the fill unlocked the recipe");
+
+                rules.getRule(net.minecraft.world.level.GameRules.RULE_LIMITED_CRAFTING).set(true, h.getLevel().getServer());
+                var limited = h.makeMockServerPlayerInLevel();
+                limited.getInventory().clearContent();
+                net.neoforged.neoforge.network.registration.ChannelAttributes.getOrCreateAdHocChannels(limited.connection.getConnection()).add(Pooled.Contents.TYPE.id());
+                var menu2 = new net.minecraft.world.inventory.CraftingMenu(10, limited.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+                limited.containerMenu = menu2;
+                menu2.handlePlacement(false, stick, limited);
+                int inGrid2 = 0;
+                for (int i = 1; i <= 9; i++) inGrid2 += menu2.getSlot(i).getItem().getCount();
+                h.assertTrue(inGrid2 == 0, "under doLimitedCrafting a locked recipe places nothing, got " + inGrid2);
+                h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 14, "and draws nothing: chest still 14");
+                h.assertTrue(!limited.getRecipeBook().contains(stick), "and stays locked");
+            } finally {
+                rules.getRule(net.minecraft.world.level.GameRules.RULE_LIMITED_CRAFTING).set(false, h.getLevel().getServer());
+            }
             h.succeed();
         });
     }

@@ -16,6 +16,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.level.GameRules;
 import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
@@ -104,7 +105,16 @@ public final class Pooled {
      * for a table outside any managed building. */
     public static void pull(ServerPlayer player, CraftingMenu menu, RecipeHolder<?> holder, boolean placeAll) {
         var m = managerFor(menu);
-        if (m == null || !m.permits(player, Access.Action.DRAW) || !(holder.value() instanceof CraftingRecipe recipe) || !player.getRecipeBook().contains(holder)) return;
+        if (m == null || !m.permits(player, Access.Action.DRAW) || !(holder.value() instanceof CraftingRecipe recipe)) return;
+        // Vanilla's placement silently refuses a recipe the player has not unlocked, and many
+        // modded recipes have no unlock advancement at all (Immersive Aircraft ships none: Rusty's
+        // propeller never filled). EMI's own fill never asked, so the pooled fill must not either:
+        // unlock it now, as crafting it by hand would, unless the world limits crafting to
+        // unlocked recipes (D-0007).
+        if (!player.getRecipeBook().contains(holder)) {
+            if (player.serverLevel().getGameRules().getBoolean(GameRules.RULE_LIMITED_CRAFTING)) return;
+            player.awardRecipes(List.of(holder));
+        }
         var pooled = tally(m);
         var all = new StackedContents();
         player.getInventory().fillStackedContents(all);
