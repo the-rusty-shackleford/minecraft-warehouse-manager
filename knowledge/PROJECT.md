@@ -64,12 +64,13 @@ is asserted on the block, not the stack count.
 
 ## Status
 
-0.3.0 is built and verified (46 JUnit, 14 GameTests, the booth with EMI; see
-[release verification](../devtools/verification/release-0.3.0.md)) and **not released**:
-Rusty has not seen it. Next: Rusty vets the panel and the refusal photos, then the release
-recipe (tag, GitHub release, `modhub add-file --replaces`, `set-version`, `assemble`, restart
-when the server is empty). On the box every existing manager is unowned until its owner
-sneaks and right-clicks it; tell Rusty that first.
+0.3.0 verified (46 JUnit, 14 GameTests, the booth with EMI; see
+[release verification](../devtools/verification/release-0.3.0.md)) and **released 2026-09-24**
+on Rusty's "Looks good, release it" after they vetted the photos: tag v0.3.0, GitHub release,
+pack 1.60.0 assembled at 16:21 UTC and deployed at 16:34 UTC with nobody online (server repo
+`knowledge/releases/pack-1.60.0.md`). On the box every manager placed before 0.3.0 is unowned
+until its owner sneaks and right-clicks it; the restart warning said so. Not yet seen on a live
+client: the trust panel against a real second player.
 
 Rusty authorized release of 0.1.0 on 2026-09-22 together with Magical Map 0.2.0, of 0.2.0 on
 2026-09-23 as pack 1.56.0 and of 0.2.1 the same night as pack 1.56.2. Booths passed and
