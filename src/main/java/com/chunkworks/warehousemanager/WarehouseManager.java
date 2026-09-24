@@ -67,6 +67,8 @@ public final class WarehouseManager {
             registrar.playToClient(Pooled.Contents.TYPE, Pooled.Contents.CODEC, (p, ctx) -> Pooled.Tally.set(p.containerId(), p.counts()));
             registrar.playToClient(Roster.Listing.TYPE, Roster.Listing.CODEC, (p, ctx) -> Roster.Client.set(p));
             registrar.playToServer(Roster.Trust.TYPE, Roster.Trust.CODEC, (p, ctx) -> { if (ctx.player() instanceof ServerPlayer player) Roster.toggle(player, p); });
+            registrar.playToClient(Index.Listing.TYPE, Index.Listing.CODEC, (p, ctx) -> Index.Client.set(p));
+            registrar.playToServer(Index.Pick.TYPE, Index.Pick.CODEC, (p, ctx) -> { if (ctx.player() instanceof ServerPlayer player) Index.pick(player, p); });
         });
     }
 }

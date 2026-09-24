@@ -45,8 +45,33 @@ paper       redstone paper
    group's name on one, its typical contents on the other. Signs are not consumed from anywhere.
 
 It rescans every ten seconds, and at once when a container or sign is placed or broken inside the
-building. Anything you put in the manager's own six-row inventory is routed the same way; what
-has no room stays visible there, and right-clicking the block shows why on the action bar.
+building. Anything you put into the manager's Insert slot is routed the same way; what has no
+room stays in the slot where you can see it, and right-clicking the block shows why on the
+action bar.
+
+## The manager's screen
+
+Right-click the manager and you see the whole warehouse: every kind of item the building holds,
+one cell each with its total in the corner, under a heading per group in the order the groups
+are labelled (Building / Stone first, Misc last). Hover a cell for the item's tooltip, its total
+and its heading. The grid scrolls under the wheel.
+
+- **Search**, in the title row: type and the grid collapses to what matches. Every word must
+  occur in the name or the heading (`iron` finds Iron Ingot and Iron Pickaxe, `metals` a whole
+  group); `@create` shows one mod's items. Typing `e` does not close the screen while the box
+  has focus; Escape does.
+- **Taking** works like a chest slot: left-click lifts a stack (or all there is) onto your
+  cursor, right-click half of that, shift-click sends a stack straight to your inventory. The
+  items come out of the nearest chest first. Owner and trusted only, like drawing at a crafting
+  table.
+- **Inserting**: put a stack into the **Insert** slot under the grid, or shift-click it from your
+  inventory, or click the grid with a stack on your cursor (all of it on left, one on right). It
+  goes into the manager at once and is routed to its chest within a tick or two; the index
+  shows it right away. What the manager has no room for stays in the Insert slot, and comes back
+  to you when you close the screen.
+
+The index refreshes every second while the screen is open, so a chest a friend empties by hand
+shows within a second.
 
 ## Furnishing an empty room
 
@@ -158,6 +183,13 @@ their mod uses the common tags or the usual naming.
 
 - Right-click the block: "mapping the building", "N containers managed, everything in its
   place", "sorting", "no containers found", or "N stacks waiting, no room in Stone".
+- An item you know is in a chest is not in the index: that chest is not managed (see the next
+  point), or it is a double chest whose halves face different ways. The index counts only what
+  the manager manages, plus what waits in the manager itself.
+- The Insert slot keeps what you put in it: the manager is full; the action bar says what is
+  waiting and for which group. Stand another chest and it sorts itself out.
+- A click on the index does nothing: you are not the owner or trusted (the panel beside says
+  whose warehouse it is); inserting still works for anyone who can open the screen.
 - A container is not managed when the walk cannot reach it: a wall in between, a container
   under open sky, or a building past the 20,000-cell cap. Put a roof over it or move the manager
   nearer.
@@ -198,6 +230,8 @@ trust panel and a refusal. `./gradlew build` produces `build/libs/warehousemanag
 
 ## Status
 
+**0.4.0**: the manager's screen is the warehouse's index: every kind under its heading with its
+total, a search box, chest-slot taking, one Insert slot in place of the six-row chest.
 **0.3.2**: when a recipe cannot be filled from your inventory and the chests together, a chat
 line says what is short ("Can't fill Engine from here: short of 1 × Boiler.") before the game's
 ghost recipe, whose slots are all red whichever part is missing.
@@ -216,5 +250,5 @@ which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an em
 is furnished from chest items dropped into the manager; each container keeps only its own
 signs (stacked chests had shared one). Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 51 JUnit tests, 16 real-server GameTests and the photo booth; see
+Verified: 61 JUnit tests, 19 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).

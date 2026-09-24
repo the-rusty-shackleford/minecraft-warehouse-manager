@@ -1,6 +1,15 @@
 # Warehouse Manager
 
-Version 0.3.2, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.4.0, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+0.4.0 (2026-09-24, late): the manager's screen is the warehouse's index (D-0009): every kind
+the building holds under its taxonomy heading with its total, a search box (name, group,
+`@mod`), chest-slot taking (left a stack to the cursor, right half, shift to the inventory, a
+loaded cursor inserts), and one Insert slot that sinks into the buffer. Rusty's three calls
+are in D-0009; the trie they floated is rejected there with the reason. Domain `Index` and
+`Take` (JUnit), server `Index` (payloads, tally, pick, refresh every second),
+`ManagerBlockEntity.pull`, `ManagerMenu` rewritten over one slot, `ManagerScreen` redrawn.
+Three GameTests and four booth photos.
 
 0.3.2 (2026-09-24, late): Rusty's Engine prefilled all red and would not craft; the Engine
 needs a boiler and there was none anywhere, so the game's ghost was right but said nothing.

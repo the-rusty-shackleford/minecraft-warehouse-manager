@@ -91,8 +91,45 @@ public final class WarehouseBooth {
                     LOG.info("warehousemanager booth: {} loose items at tick 200, player holds {}", loose.size(), p.getInventory().items.stream().filter(s -> !s.isEmpty()).toList());
                 }); }
                 case 205 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
-                case 225 -> { check(mc.screen instanceof ManagerScreen, "manager opens its own chest screen, panel unclaimed"); photo(mc, "04-manager-screen"); }
-                case 235 -> { mc.player.closeContainer();
+                // The index (D-0009): the room's contents under their headings, the search, a
+                // stack lifted onto the cursor, put back through the Insert slot.
+                case 225 -> {
+                    check(mc.screen instanceof ManagerScreen, "manager opens its own screen, panel unclaimed");
+                    var listing = Index.Client.listing(mc.player.containerMenu.containerId);
+                    check(listing != null && listing.rows().size() == 23, "the index lists the room's 23 kinds: " + (listing == null ? null : listing.rows().size()));
+                    var shown = ((ManagerScreen) mc.screen).shownEntries();
+                    check(!shown.isEmpty() && shown.get(0).group().equals("Building / Stone"), "the grid opens on the first heading's entries: " + shown);
+                    photo(mc, "04-manager-index");
+                }
+                case 228 -> ((ManagerScreen) mc.screen).search().setValue("iron");
+                case 232 -> {
+                    var shown = ((ManagerScreen) mc.screen).shownEntries();
+                    check(shown.size() == 2 && shown.stream().allMatch(e -> e.name().toLowerCase().contains("iron")), "searching 'iron' shows the ingot and the pickaxe: " + shown);
+                    photo(mc, "04b-manager-search");
+                    ((ManagerScreen) mc.screen).search().setValue("");
+                }
+                case 234 -> {
+                    var screen = (ManagerScreen) mc.screen;
+                    var at = screen.cellCentre("minecraft:cobblestone#" + net.minecraft.core.component.DataComponentPatch.EMPTY.hashCode());
+                    check(at != null, "the cobblestone cell is on screen");
+                    check(screen.mouseClicked(at[0], at[1], 0), "a left click lands on it");
+                }
+                case 244 -> {
+                    var carried = mc.player.containerMenu.getCarried();
+                    check(carried.is(Items.COBBLESTONE) && carried.getCount() == 64, "the stack of cobblestone is on the cursor: " + carried);
+                    var listing = Index.Client.listing(mc.player.containerMenu.containerId);
+                    check(listing != null && listing.rows().stream().noneMatch(r -> r.kind().is(Items.COBBLESTONE)), "and gone from the index");
+                    photo(mc, "04c-take-on-cursor");
+                    mc.gameMode.handleInventoryMouseClick(mc.player.containerMenu.containerId, ManagerMenu.INSERT, 0, net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
+                }
+                case 254 -> {
+                    check(mc.player.containerMenu.getCarried().isEmpty(), "the Insert slot took the stack off the cursor");
+                    server(mc, p -> { var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER); check(((ManagerMenu) p.containerMenu).inserted().isEmpty(), "the slot sank it into the manager"); });
+                    var listing = Index.Client.listing(mc.player.containerMenu.containerId);
+                    check(listing != null && listing.rows().stream().anyMatch(r -> r.kind().is(Items.COBBLESTONE) && r.count() == 64), "the index has the cobblestone back: " + listing.rows().stream().filter(r -> r.kind().is(Items.COBBLESTONE)).toList());
+                    photo(mc, "04d-inserted");
+                }
+                case 256 -> { mc.player.closeContainer();
                     server(mc, p -> { p.serverLevel().setBlock(TABLE, Blocks.CRAFTING_TABLE.defaultBlockState(), 3); p.getInventory().clearContent();
                         // The book's open and filter flags live on the server's copy and travel to the client with the award below.
                         p.getRecipeBook().setBookSetting(net.minecraft.world.inventory.RecipeBookType.CRAFTING, true, true);

@@ -3,6 +3,7 @@ package com.chunkworks.warehousemanager.gametest;
 
 import com.chunkworks.warehousemanager.*;
 import com.chunkworks.warehousemanager.domain.*;
+import com.chunkworks.warehousemanager.Index;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.*;
@@ -30,7 +31,9 @@ import java.util.*;
 
 /** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; a recipe the
  * player has not unlocked fills and is unlocked, unless doLimitedCrafting is on (D-0007); a fill
- * that cannot be covered names what is short (D-0008); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
+ * that cannot be covered names what is short (D-0008); the index lists every kind with its total
+ * under its heading, a click on it behaves like a chest slot for the owner and the trusted and
+ * not for a stranger, and the Insert slot sinks into the buffer (D-0009); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
  * every container labelled; a chest outside the walls is untouched; the buffer routes to the
  * right container; an existing sign is rewritten, not duplicated; a double chest gets title and
@@ -408,6 +411,123 @@ public final class WarehouseGameTests {
             h.succeed();
         });
     }
+    // The index (D-0009).
+    private static int total(ManagerBlockEntity m, Item item) {
+        int n = 0;
+        for (var r : Index.tally(m)) if (r.kind().is(item)) n += r.count();
+        return n;
+    }
+    /** D-0009: the index lists every kind the building holds once, with its total over every chest
+     * and the buffer, under the heading the taxonomy gives it, and the headings come in the
+     * taxonomy's order. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void theIndexListsEveryKindWithItsTotal(GameTestHelper h) {
+        house(h);
+        loot(h);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(200, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled(), "manager settled");
+            m.buffer().setItem(0, new ItemStack(Items.STONE, 3));
+            var rows = Index.tally(m);
+            h.assertTrue(rows.size() == 24, "one row per kind in the loot, got " + rows.size() + ": " + rows);
+            var stone = rows.stream().filter(r -> r.kind().is(Items.STONE)).findFirst().orElseThrow();
+            h.assertTrue(stone.count() == 35 && stone.group().equals("Building / Stone"), "stone counts the chest and the buffer under its heading: " + stone);
+            var iron = rows.stream().filter(r -> r.kind().is(Items.IRON_INGOT)).findFirst().orElseThrow();
+            h.assertTrue(iron.count() == 5 && iron.group().equals("Materials / Ores & Metals") && iron.kind().getCount() == 1, "iron: " + iron);
+            var groups = Index.groups();
+            h.assertTrue(groups.get(0).equals("Building / Stone") && groups.get(groups.size() - 1).equals("Misc") && groups.contains("Food & Farming / Food"),
+                    "headings in the taxonomy's order, leaf under its parent, Misc last: " + groups);
+            m.buffer().setItem(0, ItemStack.EMPTY);
+            h.succeed();
+        });
+    }
+    /** D-0009: a click on an entry behaves like a chest slot: left lifts a stack onto the cursor,
+     * right half, shift a stack to the inventory; a loaded cursor puts all or one into the
+     * buffer; a stranger to an owned warehouse takes nothing, a trusted player does. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void takingFromTheIndexBehavesLikeAChestSlot(GameTestHelper h) {
+        house(h);
+        loot(h);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(200, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled(), "manager settled");
+            var player = mock(h, MANAGER.south());
+            var menu = new ManagerMenu(21, player.getInventory(), m);
+            player.containerMenu = menu;
+            var cobble = new ItemStack(Items.COBBLESTONE); var iron = new ItemStack(Items.IRON_INGOT); var dirt = new ItemStack(Items.DIRT);
+            Index.pick(player, new Index.Pick(21, cobble, true, false));
+            h.assertTrue(menu.getCarried().is(Items.COBBLESTONE) && menu.getCarried().getCount() == 64, "left lifts a stack of cobblestone: " + menu.getCarried());
+            h.assertTrue(total(m, Items.COBBLESTONE) == 0, "the chests gave all 64");
+            Index.pick(player, new Index.Pick(21, cobble, true, false));
+            h.assertTrue(menu.getCarried().isEmpty() && total(m, Items.COBBLESTONE) == 64, "a loaded cursor puts it all back into the building: carried " + menu.getCarried() + " total " + total(m, Items.COBBLESTONE));
+            Index.pick(player, new Index.Pick(21, iron, false, false));
+            h.assertTrue(menu.getCarried().is(Items.IRON_INGOT) && menu.getCarried().getCount() == 3, "right lifts half of five iron, rounded up: " + menu.getCarried());
+            Index.pick(player, new Index.Pick(21, iron, false, false));
+            h.assertTrue(menu.getCarried().getCount() == 2 && total(m, Items.IRON_INGOT) == 3, "right with a loaded cursor inserts one: carried " + menu.getCarried() + " total " + total(m, Items.IRON_INGOT));
+            Index.pick(player, new Index.Pick(21, dirt, true, true));
+            h.assertTrue(menu.getCarried().isEmpty() && total(m, Items.IRON_INGOT) == 5, "shift with a loaded cursor inserts it like any click: carried " + menu.getCarried() + " iron " + total(m, Items.IRON_INGOT));
+            Index.pick(player, new Index.Pick(21, dirt, true, true));
+            int held = 0;
+            for (var s : player.getInventory().items) if (s.is(Items.DIRT)) held += s.getCount();
+            h.assertTrue(held == 40 && menu.getCarried().isEmpty(), "shift with an empty cursor sends a stack of dirt to the inventory: " + held + " " + menu.getCarried());
+            Index.pick(player, new Index.Pick(21, new ItemStack(Items.NETHERITE_INGOT), true, false));
+            h.assertTrue(menu.getCarried().isEmpty(), "a kind the building lacks does nothing");
+
+            var owner = mock(h, MANAGER.south());
+            h.assertTrue(m.claim(owner), "the owner claims the warehouse");
+            var stranger = mock(h, MANAGER.south());
+            var strangerMenu = new ManagerMenu(22, stranger.getInventory(), m);
+            stranger.containerMenu = strangerMenu;
+            Index.pick(stranger, new Index.Pick(22, dirt, true, false));
+            h.assertTrue(strangerMenu.getCarried().isEmpty(), "a stranger takes nothing");
+            m.trust(stranger.getUUID(), "friend", true);
+            Index.pick(stranger, new Index.Pick(22, new ItemStack(Items.GRAVEL), true, false));
+            h.assertTrue(strangerMenu.getCarried().is(Items.GRAVEL) && strangerMenu.getCarried().getCount() == 20, "trusted, the same player lifts the gravel: " + strangerMenu.getCarried());
+            strangerMenu.setCarried(ItemStack.EMPTY);
+            h.succeed();
+        });
+    }
+    /** D-0009: the Insert slot sinks what it is given into the buffer at once, the drain then
+     * routes it to its chest; shift-click from the inventory goes the same way; a full buffer
+     * leaves the stack in the slot, and closing the menu hands it back. */
+    @GameTest(template = "house", timeoutTicks = 500, skyAccess = true) public void theInsertSlotSinksIntoTheBuffer(GameTestHelper h) {
+        house(h);
+        loot(h);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(200, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled(), "manager settled");
+            var player = mock(h, MANAGER.south());
+            var menu = new ManagerMenu(23, player.getInventory(), m);
+            player.containerMenu = menu;
+            menu.slots.get(ManagerMenu.INSERT).set(new ItemStack(Items.SAND, 10));
+            h.assertTrue(menu.inserted().isEmpty(), "the slot is empty again at once");
+            int buffered = 0;
+            for (int i = 0; i < m.buffer().getContainerSize(); i++) if (m.buffer().getItem(i).is(Items.SAND)) buffered += m.buffer().getItem(i).getCount();
+            h.assertTrue(buffered == 10, "the buffer holds the sand: " + buffered);
+            player.getInventory().setItem(0, new ItemStack(Items.GRAVEL, 5));
+            var moved = menu.quickMoveStack(player, 28);
+            h.assertTrue(!moved.isEmpty() && player.getInventory().getItem(0).isEmpty(), "shift-click from the hotbar sinks the gravel: " + moved + " " + player.getInventory().getItem(0));
+            h.assertTrue(total(m, Items.GRAVEL) == 25, "the gravel is in the building: " + total(m, Items.GRAVEL));
+        });
+        h.runAtTickTime(300, () -> {
+            var m = manager(h);
+            h.assertTrue(m.buffer().isEmpty(), "the buffer drained");
+            h.assertTrue(census(h).getOrDefault(Items.SAND, 0) == 40 && census(h).getOrDefault(Items.GRAVEL, 0) == 25, "sand and gravel reached the chests: " + census(h));
+            var player = mock(h, MANAGER.south());
+            var menu = new ManagerMenu(24, player.getInventory(), m);
+            player.containerMenu = menu;
+            for (int i = 0; i < m.buffer().getContainerSize(); i++) m.buffer().setItem(i, new ItemStack(Items.BEDROCK, 64));
+            menu.slots.get(ManagerMenu.INSERT).set(new ItemStack(Items.SAND, 7));
+            h.assertTrue(menu.inserted().is(Items.SAND) && menu.inserted().getCount() == 7, "a full buffer leaves the stack in the slot: " + menu.inserted());
+            menu.removed(player);
+            int sand = 0;
+            for (var s : player.getInventory().items) if (s.is(Items.SAND)) sand += s.getCount();
+            h.assertTrue(sand == 7, "closing hands the slot's stack back: " + sand);
+            for (int i = 0; i < m.buffer().getContainerSize(); i++) m.buffer().setItem(i, ItemStack.EMPTY);
+            h.succeed();
+        });
+    }
     @GameTest(template = "house", timeoutTicks = 200, skyAccess = true) public void breakingTheManagerSpillsItsBuffer(GameTestHelper h) {
         house(h);
         h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
@@ -429,6 +549,7 @@ public final class WarehouseGameTests {
         var channels = ChannelAttributes.getOrCreateAdHocChannels(player.connection.getConnection());
         channels.add(Pooled.Contents.TYPE.id());
         channels.add(Roster.Listing.TYPE.id());
+        channels.add(Index.Listing.TYPE.id());
         return player;
     }
     /** effects: a crafting menu over the table, open for the player. */

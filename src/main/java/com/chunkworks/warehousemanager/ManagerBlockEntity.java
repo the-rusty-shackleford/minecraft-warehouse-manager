@@ -136,8 +136,23 @@ public final class ManagerBlockEntity extends BlockEntity {
         if (!permits(player, Access.Action.OPEN_MANAGER)) { player.displayClientMessage(Guard.refusal("warehousemanager.refuse.open", this), true); return; }
         if (player.getUUID().equals(ownership.owner())) ownerName = player.getScoreboardName();
         var id = player.openMenu(new SimpleMenuProvider((cid, inv, p) -> new ManagerMenu(cid, inv, this), TITLE));
-        if (id.isPresent()) Roster.send(player, this, id.getAsInt());
+        if (id.isPresent()) { Roster.send(player, this, id.getAsInt()); Index.send(player, this, id.getAsInt()); }
         player.displayClientMessage(status(), true);
+    }
+    /** effects: takes up to {@code amount} items of the kind (same item and components) out of the
+     * building, the chests nearest first and then the buffer; returns what was taken, empty when
+     * none was there. */
+    public ItemStack pull(ItemStack kind, int amount) {
+        int taken = 0;
+        for (var c : Index.containers(this)) for (int i = 0; i < c.getContainerSize() && taken < amount; i++) {
+            var s = c.getItem(i);
+            if (s.isEmpty() || !ItemStack.isSameItemSameComponents(s, kind)) continue;
+            int n = Math.min(amount - taken, s.getCount());
+            s.shrink(n);
+            if (s.isEmpty()) c.setItem(i, ItemStack.EMPTY); else c.setChanged();
+            taken += n;
+        }
+        return taken == 0 ? ItemStack.EMPTY : kind.copyWithCount(taken);
     }
     /** effects: a status line for the action bar. */
     public Component status() {
@@ -156,6 +171,7 @@ public final class ManagerBlockEntity extends BlockEntity {
     void tick() {
         if (!(level instanceof ServerLevel sl)) return;
         if (!registered) { Managers.add(this); registered = true; }
+        Index.refresh(this, sl);
         if (fill != null) { if (fill.step(CELLS_PER_TICK)) finishScan(sl); return; }
         if (--rescanIn <= 0) { startScan(sl); return; }
         if (furnish(sl)) return;
