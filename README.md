@@ -166,6 +166,10 @@ their mod uses the common tags or the usual naming.
 - "…'s warehouse. You're not on the trusted list." on a chest: the chest is held by a manager
   whose owner has not trusted you. Ask them; they toggle names in the manager's screen. The
   same line on the manager block itself means the same thing.
+- A clicked recipe prefills with every slot red: the game's ghost recipe, meaning some part is
+  missing from your inventory and the chests together; since 0.3.2 the chat line above it names
+  the part and how many. An ingredient that accepts several items is named by the first (Coal
+  for coal or charcoal).
 - A recipe that shows as craftable but does not fill when clicked, on a world with
   `doLimitedCrafting` on: the game refuses recipes you have not unlocked, and the pooled fill
   respects that. Craft it by hand once. (Elsewhere the fill unlocks it for you since 0.3.1.)
@@ -194,6 +198,9 @@ trust panel and a refusal. `./gradlew build` produces `build/libs/warehousemanag
 
 ## Status
 
+**0.3.2**: when a recipe cannot be filled from your inventory and the chests together, a chat
+line says what is short ("Can't fill Engine from here: short of 1 × Boiler.") before the game's
+ghost recipe, whose slots are all red whichever part is missing.
 **0.3.1**: a recipe you have never unlocked (most modded recipes, such as Immersive Aircraft's
 propeller, have no unlock at all) now fills from the chests and is unlocked by it; before, the
 game's own placement refused it silently. Under `doLimitedCrafting` it stays refused.
@@ -209,5 +216,5 @@ which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an em
 is furnished from chest items dropped into the manager; each container keeps only its own
 signs (stacked chests had shared one). Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 46 JUnit tests, 15 real-server GameTests and the photo booth; see
+Verified: 51 JUnit tests, 16 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).

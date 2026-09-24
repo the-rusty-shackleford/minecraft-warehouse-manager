@@ -11,3 +11,4 @@ Rationales are append-only. Supersede with a new decision.
 | [D-0005](D-0005.md) | Accepted | EMI counts the building's containers through a first-placed recipe handler |
 | [D-0006](D-0006.md) | Accepted | An owner and a trusted roster bind crafting, the manager and its containers; one manager per building, claims persist |
 | [D-0007](D-0007.md) | Accepted | The pooled fill unlocks a recipe the player has not unlocked (vanilla's placement refused it silently; Rusty's propeller), except under doLimitedCrafting |
+| [D-0008](D-0008.md) | Accepted | A fill the player and the building cannot cover says what is short in chat, before vanilla's all-red ghost (Rusty's Engine without a boiler) |

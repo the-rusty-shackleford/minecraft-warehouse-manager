@@ -7,6 +7,8 @@
   "warehousemanager.status.waiting": "Warehouse Manager: %s stacks waiting, no room in %s.",
   "warehousemanager.status.none": "Warehouse Manager: no containers found in this building. Drop chests in and it will stand them along the walls.",
   "warehousemanager.status.nowall": "Warehouse Manager: no free wall space for another chest.",
+  "warehousemanager.pooled.short": "Can't fill %s from here: short of %s.",
+  "warehousemanager.pooled.short.item": "%s × %s",
   "warehousemanager.claimed": "This warehouse is now yours. Open it to choose who else may use it.",
   "warehousemanager.refuse.open": "%s's warehouse. You're not on the trusted list.",
   "warehousemanager.refuse.break": "%s's warehouse. Only trusted players can break that.",

@@ -5,7 +5,10 @@ import com.chunkworks.warehousemanager.domain.Access;
 import com.chunkworks.warehousemanager.domain.Pooling;
 import com.chunkworks.warehousemanager.mixin.CraftingMenuAccessor;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -120,20 +123,56 @@ public final class Pooled {
         player.getInventory().fillStackedContents(all);
         menu.fillCraftSlotsStackedContents(all);
         pooled.forEach((item, n) -> all.accountStack(new ItemStack(item, n), n));
+        var held = held(player, menu);
+        var pooledIds = new HashMap<String, Integer>();
+        pooled.forEach((item, n) -> pooledIds.put(key(item), n));
         var chosen = new IntArrayList();
-        if (!all.canCraft(recipe, chosen)) return;
+        if (!all.canCraft(recipe, chosen)) {
+            // Vanilla answers with a ghost recipe, every slot red; say what is short (D-0008).
+            var short_ = shortage(recipe, held, pooledIds);
+            if (!short_.isEmpty()) player.displayClientMessage(shortMessage(recipe.getResultItem(player.registryAccess()), short_), false);
+            return;
+        }
         int wanted = placeAll ? Math.max(1, Math.min(all.getBiggestCraftableStack(holder, null), recipe.getResultItem(player.registryAccess()).getMaxStackSize())) : 1;
         var chosenIds = new ArrayList<String>();
         for (int id : chosen) chosenIds.add(key(StackedContents.fromStackingIndex(id).getItem()));
-        var held = new HashMap<String, Integer>();
-        for (var s : player.getInventory().items) if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum);
-        for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum); }
-        var pooledIds = new HashMap<String, Integer>();
-        pooled.forEach((item, n) -> pooledIds.put(key(item), n));
         var pull = Pooling.pull(chosenIds, wanted, held, pooledIds);
         boolean drew = false;
         for (var e : pull.take().entrySet()) drew |= draw(player, m, e.getKey(), e.getValue());
         if (drew) send(player, menu);
+    }
+    /** effects: item counts over the player's inventory and the grid. */
+    public static Map<String, Integer> held(ServerPlayer player, CraftingMenu menu) {
+        var held = new HashMap<String, Integer>();
+        for (var s : player.getInventory().items) if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum);
+        for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum); }
+        return held;
+    }
+    /** effects: what one craft of the recipe is short of, counting {@code held} and {@code pooled}
+     * together: the domain's answer over the recipe's ingredients, each as the items it accepts. */
+    public static List<Pooling.Shortage> shortage(CraftingRecipe recipe, Map<String, Integer> held, Map<String, Integer> pooled) {
+        var ingredients = new ArrayList<List<String>>();
+        for (var ingredient : recipe.getIngredients()) {
+            if (ingredient.isEmpty()) continue;
+            var options = new ArrayList<String>();
+            for (var s : ingredient.getItems()) { var k = key(s.getItem()); if (!options.contains(k)) options.add(k); }
+            if (!options.isEmpty()) ingredients.add(options);
+        }
+        var available = new HashMap<>(held);
+        pooled.forEach((k, n) -> available.merge(k, n, Integer::sum));
+        return Pooling.shortfall(ingredients, available);
+    }
+    /** effects: "Can't fill <result> from here: short of 1 × Boiler, 2 × Piston." with each
+     * shortage named by the first item its ingredient accepts. */
+    public static Component shortMessage(ItemStack result, List<Pooling.Shortage> shortages) {
+        var list = Component.empty();
+        for (int i = 0; i < shortages.size(); i++) {
+            var s = shortages.get(i);
+            var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(s.options().get(0)));
+            if (i > 0) list.append(", ");
+            list.append(Component.translatable("warehousemanager.pooled.short.item", s.missing(), Component.translatable(item.getDescriptionId())));
+        }
+        return Component.translatable("warehousemanager.pooled.short", result.getHoverName(), list).withStyle(ChatFormatting.GRAY);
     }
     private static String key(Item item) { return BuiltInRegistries.ITEM.getKey(item).toString(); }
     /** effects: moves up to {@code count} of the item from the building's containers, nearest

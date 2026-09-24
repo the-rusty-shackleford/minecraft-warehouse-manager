@@ -29,7 +29,8 @@ import net.neoforged.neoforge.network.registration.ChannelAttributes;
 import java.util.*;
 
 /** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; a recipe the
- * player has not unlocked fills and is unlocked, unless doLimitedCrafting is on (D-0007); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
+ * player has not unlocked fills and is unlocked, unless doLimitedCrafting is on (D-0007); a fill
+ * that cannot be covered names what is short (D-0008); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
  * every container labelled; a chest outside the walls is untouched; the buffer routes to the
  * right container; an existing sign is rewritten, not duplicated; a double chest gets title and
@@ -367,6 +368,43 @@ public final class WarehouseGameTests {
             } finally {
                 rules.getRule(net.minecraft.world.level.GameRules.RULE_LIMITED_CRAFTING).set(false, h.getLevel().getServer());
             }
+            h.succeed();
+        });
+    }
+    /** D-0008: a fill the player and the building cannot cover names what is short: a torch with
+     * sticks in the chest and no coal is short of one Coal (or charcoal); with a coal in the
+     * inventory it is short of nothing; the placement itself still places nothing. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void anUncoverableFillSaysWhatIsShort(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.STICK, 4);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = h.makeMockServerPlayerInLevel();
+            player.getInventory().clearContent();
+            net.neoforged.neoforge.network.registration.ChannelAttributes.getOrCreateAdHocChannels(player.connection.getConnection()).add(Pooled.Contents.TYPE.id());
+            var menu = new net.minecraft.world.inventory.CraftingMenu(11, player.getInventory(), net.minecraft.world.inventory.ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var torch = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("torch")).orElseThrow();
+            var recipe = (net.minecraft.world.item.crafting.CraftingRecipe) torch.value();
+            var pooled = new HashMap<String, Integer>();
+            for (int i = 0; i < chestAt(h, chestPos).getContainerSize(); i++) { var s = chestAt(h, chestPos).getItem(i); if (!s.isEmpty()) pooled.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.getCount(), Integer::sum); }
+            var shortage = Pooled.shortage(recipe, Pooled.held(player, menu), pooled);
+            h.assertTrue(shortage.size() == 1 && shortage.get(0).missing() == 1 && shortage.get(0).options().contains("minecraft:coal") && shortage.get(0).options().contains("minecraft:charcoal"),
+                    "a torch with sticks pooled and no coal is short of one coal or charcoal: " + shortage);
+            var text = Pooled.shortMessage(recipe.getResultItem(h.getLevel().registryAccess()), shortage).getString();
+            h.assertTrue(text.contains("Torch") && text.contains("1 × Coal"), "the message names the result and the shortage: " + text);
+            menu.handlePlacement(false, torch, player);
+            int inGrid = 0;
+            for (int i = 1; i <= 9; i++) inGrid += menu.getSlot(i).getItem().getCount();
+            h.assertTrue(inGrid == 0 && chestAt(h, chestPos).getItem(0).getCount() == 4, "nothing placed, nothing drawn: grid " + inGrid + " chest " + chestAt(h, chestPos).getItem(0).getCount());
+            player.getInventory().setItem(0, new ItemStack(Items.COAL, 1));
+            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "with a coal in hand the craft is covered");
             h.succeed();
         });
     }

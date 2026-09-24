@@ -1,6 +1,12 @@
 # Warehouse Manager
 
-Version 0.3.1, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.3.2, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+0.3.2 (2026-09-24, late): Rusty's Engine prefilled all red and would not craft; the Engine
+needs a boiler and there was none anywhere, so the game's ghost was right but said nothing.
+A fill the inventory, grid and chests cannot cover now sends one chat line naming what is short
+("Can't fill Engine from here: short of 1 × Boiler."), from the domain's `Pooling.shortfall`
+(D-0008). JUnit and a GameTest (torch without coal); 16 GameTests.
 
 0.3.1 (2026-09-24 evening): Rusty's propeller (five iron ingots, Immersive Aircraft) did not
 fill from the chests. Vanilla's recipe placement silently refuses a recipe the player has not
