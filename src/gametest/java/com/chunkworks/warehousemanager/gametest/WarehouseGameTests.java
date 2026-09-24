@@ -7,20 +7,37 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.*;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.CraftingMenu;
 import net.minecraft.world.item.*;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.*;
+import net.neoforged.neoforge.network.registration.ChannelAttributes;
 import java.util.*;
 
 /** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
  * every container labelled; a chest outside the walls is untouched; the buffer routes to the
  * right container; an existing sign is rewritten, not duplicated; a double chest gets title and
- * hint signs; breaking the manager spills the buffer. */
+ * hint signs; breaking the manager spills the buffer. Ownership (D-0006): the owner and a
+ * trusted player draw from the chests, open and keep them open, a stranger gets vanilla, a
+ * refused open and a refused break, and trust withdrawn invalidates the open chest; a second
+ * manager stands in the room next door but is refused through a hole in the wall, after which
+ * the first claims across it; explosions leave claimed chests and the manager standing; a
+ * claim outlives the manager unloading and ends with its block. */
 @GameTestHolder("warehousemanager") @PrefixGameTestTemplate(false)
 public final class WarehouseGameTests {
     private static final BlockPos MANAGER = new BlockPos(2, 2, 2);
@@ -310,5 +327,170 @@ public final class WarehouseGameTests {
         manager(h).buffer().setItem(0, new ItemStack(Items.NETHERITE_INGOT, 3));
         h.setBlock(MANAGER, Blocks.AIR);
         h.succeedWhen(() -> h.assertItemEntityPresent(Items.NETHERITE_INGOT, MANAGER, 2));
+    }
+
+    // Ownership (D-0006).
+    private static final BlockPos CHEST = new BlockPos(12, 2, 4), TABLE = new BlockPos(6, 2, 6), SECOND = new BlockPos(11, 2, 8), HOLE = new BlockPos(9, 2, 7);
+    /** effects: a mock player with an empty inventory standing at the position, with the mod's
+     * client-bound payloads declared on its embedded connection (the GameTest connection skips
+     * channel negotiation). */
+    private static ServerPlayer mock(GameTestHelper h, BlockPos at) {
+        var player = h.makeMockServerPlayerInLevel();
+        player.getInventory().clearContent();
+        var abs = h.absolutePos(at);
+        player.moveTo(abs.getX() + 0.5, abs.getY(), abs.getZ() + 0.5);
+        var channels = ChannelAttributes.getOrCreateAdHocChannels(player.connection.getConnection());
+        channels.add(Pooled.Contents.TYPE.id());
+        channels.add(Roster.Listing.TYPE.id());
+        return player;
+    }
+    /** effects: a crafting menu over the table, open for the player. */
+    private static CraftingMenu tableMenu(GameTestHelper h, ServerPlayer player, int id) {
+        var menu = new CraftingMenu(id, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(TABLE)));
+        player.containerMenu = menu;
+        return menu;
+    }
+    private static int planksIn(CraftingMenu menu) {
+        int n = 0;
+        for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.OAK_PLANKS)) n += menu.getSlot(i).getItem().getCount();
+        return n;
+    }
+    /** effects: right-clicks the block with an empty hand through the server's use path. */
+    private static InteractionResult rightClick(GameTestHelper h, ServerPlayer player, BlockPos pos) {
+        var abs = h.absolutePos(pos);
+        player.containerMenu = player.inventoryMenu;
+        return player.gameMode.useItemOn(player, h.getLevel(), ItemStack.EMPTY, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(abs), Direction.WEST, abs, false));
+    }
+    /** effects: places a manager item on the floor cell under the position, as a player would. */
+    private static InteractionResult place(GameTestHelper h, ServerPlayer player, BlockPos pos) {
+        player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(WarehouseManager.ITEM.get()));
+        var floor = h.absolutePos(pos.below());
+        var hit = new BlockHitResult(Vec3.atCenterOf(floor).add(0, 0.5, 0), Direction.UP, floor, false);
+        return player.getMainHandItem().useOn(new UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+    }
+    /** effects: a stone wall at x=9 dividing the shell into a west and an east room on both floors. */
+    private static void divide(GameTestHelper h) {
+        for (int y = 2; y <= 8; y++) for (int z = 2; z <= 12; z++) h.setBlock(new BlockPos(9, y, z), Blocks.STONE);
+    }
+
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void ownerAndTrustedDrawAndOpenWhileStrangersAreRefused(GameTestHelper h) {
+        shell(h);
+        h.setBlock(CHEST, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, CHEST), Items.OAK_PLANKS, 16);
+        h.setBlock(TABLE, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        var owner = mock(h, CHEST.west());
+        var stranger = mock(h, CHEST.west());
+        h.assertTrue(manager(h).claim(owner), "the first claimant owns the manager");
+        h.assertTrue(!manager(h).claim(stranger), "a second claim is refused");
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var stick = h.getLevel().getServer().getRecipeManager().byKey(ResourceLocation.withDefaultNamespace("stick")).orElseThrow();
+            owner.awardRecipes(List.of(stick)); stranger.awardRecipes(List.of(stick));
+            var menu = tableMenu(h, owner, 7);
+            menu.handlePlacement(false, stick, owner);
+            h.assertTrue(planksIn(menu) == 2 && chestAt(h, CHEST).getItem(0).getCount() == 14, "the owner draws two planks from the chest");
+            var strangers = tableMenu(h, stranger, 8);
+            strangers.handlePlacement(false, stick, stranger);
+            h.assertTrue(planksIn(strangers) == 0 && chestAt(h, CHEST).getItem(0).getCount() == 14, "a stranger draws nothing: vanilla");
+            rightClick(h, stranger, CHEST);
+            h.assertTrue(stranger.containerMenu == stranger.inventoryMenu, "a stranger cannot open the claimed chest");
+            h.assertTrue(!stranger.gameMode.destroyBlock(h.absolutePos(CHEST)) && h.getBlockState(CHEST).is(Blocks.CHEST), "a stranger cannot break the claimed chest");
+            h.assertTrue(!stranger.gameMode.destroyBlock(h.absolutePos(MANAGER)) && h.getBlockState(MANAGER).is(WarehouseManager.BLOCK.get()), "a stranger cannot break the manager");
+            rightClick(h, owner, CHEST);
+            h.assertTrue(owner.containerMenu instanceof ChestMenu && owner.containerMenu.stillValid(owner), "the owner opens the chest");
+            owner.closeContainer();
+            m.open(owner);
+            h.assertTrue(owner.containerMenu instanceof ManagerMenu, "the manager opens its own menu for the owner");
+            int id = owner.containerMenu.containerId;
+            Roster.toggle(stranger, new Roster.Trust(id, stranger.getUUID(), true));
+            h.assertTrue(m.ownership().trusted().isEmpty(), "a toggle from anyone but the owner is ignored");
+            Roster.toggle(owner, new Roster.Trust(id, stranger.getUUID(), true));
+            h.assertTrue(m.ownership().trusted().contains(stranger.getUUID()), "the owner's toggle trusts the stranger");
+            owner.closeContainer();
+            var trusted = tableMenu(h, stranger, 9);
+            trusted.handlePlacement(false, stick, stranger);
+            h.assertTrue(planksIn(trusted) == 2 && chestAt(h, CHEST).getItem(0).getCount() == 12, "once trusted the player draws from the chest");
+            rightClick(h, stranger, CHEST);
+            h.assertTrue(stranger.containerMenu instanceof ChestMenu && stranger.containerMenu.stillValid(stranger), "once trusted the player opens the chest");
+            Roster.toggle(owner, new Roster.Trust(id, stranger.getUUID(), false));
+            h.assertTrue(m.ownership().trusted().contains(stranger.getUUID()), "a toggle without the manager open is ignored");
+            m.trust(stranger.getUUID(), "", false);
+            h.assertTrue(!stranger.containerMenu.stillValid(stranger), "trust withdrawn, the open chest is no longer valid and closes next tick");
+            h.succeed();
+        });
+    }
+    @GameTest(template = "house", timeoutTicks = 600, skyAccess = true) public void secondManagerIsRefusedThroughAHoleAndTheFirstClaimsAcrossIt(GameTestHelper h) {
+        shell(h); divide(h);
+        h.setBlock(CHEST, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, CHEST), Items.COAL, 9);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        var builder = mock(h, new BlockPos(11, 2, 11));
+        h.runAtTickTime(60, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().isEmpty(), "the west room's manager finds no chest behind the wall");
+            var result = place(h, builder, SECOND);
+            h.assertTrue(h.getBlockState(SECOND).is(WarehouseManager.BLOCK.get()), "a manager may stand in the room next door: " + result);
+            var second = (ManagerBlockEntity) Objects.requireNonNull(h.getBlockEntity(SECOND));
+            h.assertTrue(builder.getUUID().equals(second.ownership().owner()), "the placer owns what they placed");
+            h.setBlock(SECOND, Blocks.AIR);
+            h.setBlock(HOLE, Blocks.AIR);
+            result = place(h, builder, SECOND);
+            h.assertTrue(!h.getBlockState(SECOND).is(WarehouseManager.BLOCK.get()), "through the hole the rooms are one building and the second manager is refused: " + result);
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 60, "after the hole");
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "the first manager claims the chest across the hole");
+        });
+    }
+    @GameTest(template = "house", timeoutTicks = 300, skyAccess = true) public void explosionsLeaveClaimedChestsAndTheManagerStanding(GameTestHelper h) {
+        shell(h);
+        h.setBlock(CHEST, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, CHEST), Items.DIAMOND, 5);
+        var nearChest = new BlockPos(10, 2, 5);
+        var nearManager = new BlockPos(3, 2, 4);
+        h.setBlock(nearChest, Blocks.DIRT); h.setBlock(nearManager, Blocks.DIRT);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(60, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "the chest is claimed");
+            var level = h.getLevel();
+            var a = h.absolutePos(new BlockPos(11, 2, 5));
+            level.explode(null, a.getX() + 0.5, a.getY() + 0.5, a.getZ() + 0.5, 4f, Level.ExplosionInteraction.TNT);
+            var b = h.absolutePos(new BlockPos(3, 2, 3));
+            level.explode(null, b.getX() + 0.5, b.getY() + 0.5, b.getZ() + 0.5, 4f, Level.ExplosionInteraction.TNT);
+            h.assertTrue(h.getBlockState(nearChest).isAir() && h.getBlockState(nearManager).isAir(), "the blasts took the dirt beside each");
+            h.assertTrue(h.getBlockState(CHEST).is(Blocks.CHEST) && chestAt(h, CHEST).getItem(0).getCount() == 5, "the claimed chest stands with its diamonds");
+            h.assertTrue(h.getBlockState(MANAGER).is(WarehouseManager.BLOCK.get()), "the manager stands");
+            h.succeed();
+        });
+    }
+    @GameTest(template = "house", timeoutTicks = 600, skyAccess = true) public void claimsOutliveTheManagersUnloadingAndEndWithItsBlock(GameTestHelper h) {
+        shell(h); divide(h);
+        h.setBlock(HOLE, Blocks.AIR);
+        h.setBlock(CHEST, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, CHEST), Items.COAL, 9);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(60, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "the first manager claims the chest through the hole");
+            h.assertTrue(h.absolutePos(MANAGER).equals(Claims.of(h.getLevel()).holder(h.absolutePos(CHEST))), "the claim is in the level's saved data");
+            Managers.remove(m);
+            h.setBlock(SECOND, WarehouseManager.BLOCK.get());
+        });
+        h.runAtTickTime(260, () -> {
+            var second = (ManagerBlockEntity) Objects.requireNonNull(h.getBlockEntity(SECOND));
+            h.assertTrue(second.settled() && second.units().isEmpty(), "the chest stays with the unloaded manager while its block stands, got " + second.units());
+            h.assertTrue(h.absolutePos(MANAGER).equals(Claims.of(h.getLevel()).holder(h.absolutePos(CHEST))), "the claim still names the first manager");
+            h.setBlock(MANAGER, Blocks.AIR);
+            h.assertTrue(Claims.of(h.getLevel()).holder(h.absolutePos(CHEST)) == null, "breaking the manager releases its claims");
+        });
+        h.succeedWhen(() -> {
+            h.assertTrue(h.getTick() > 260, "after the first manager is gone");
+            var second = (ManagerBlockEntity) Objects.requireNonNull(h.getBlockEntity(SECOND));
+            h.assertTrue(second.settled() && second.units().size() == 1, "the second manager claims the freed chest");
+        });
     }
 }

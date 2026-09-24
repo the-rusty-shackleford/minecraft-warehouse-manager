@@ -2,6 +2,7 @@
 package com.chunkworks.warehousemanager.integration.emi;
 
 import com.chunkworks.warehousemanager.Pooled;
+import com.chunkworks.warehousemanager.client.ManagerScreen;
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
@@ -10,6 +11,7 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.handler.EmiCraftContext;
 import dev.emi.emi.api.recipe.handler.StandardRecipeHandler;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.registry.EmiRecipeFiller;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -38,6 +40,9 @@ public final class WarehouseEmiPlugin implements EmiPlugin {
         registry.addRecipeHandler(MenuType.CRAFTING, handler);
         var handlers = EmiRecipeFiller.handlers.get(MenuType.CRAFTING);
         if (handlers != null && handlers.remove(handler)) handlers.add(0, handler);
+        // EMI's item panel fills the right of every screen and would paint over the trust panel
+        // beside the manager's chest grid (D-0006): declare that rectangle so EMI keeps off it.
+        registry.addExclusionArea(ManagerScreen.class, (screen, out) -> out.accept(new Bounds(screen.panelLeft(), screen.panelTop(), screen.panelWidth(), screen.panelHeight())));
     }
 
     /** The vanilla crafting table with the building's containers counted in. For a table the

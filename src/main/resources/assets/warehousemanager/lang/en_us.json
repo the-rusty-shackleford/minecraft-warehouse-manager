@@ -6,5 +6,17 @@
   "warehousemanager.status.sorting": "Warehouse Manager: %s containers managed, sorting…",
   "warehousemanager.status.waiting": "Warehouse Manager: %s stacks waiting, no room in %s.",
   "warehousemanager.status.none": "Warehouse Manager: no containers found in this building. Drop chests in and it will stand them along the walls.",
-  "warehousemanager.status.nowall": "Warehouse Manager: no free wall space for another chest."
+  "warehousemanager.status.nowall": "Warehouse Manager: no free wall space for another chest.",
+  "warehousemanager.claimed": "This warehouse is now yours. Open it to choose who else may use it.",
+  "warehousemanager.refuse.open": "%s's warehouse. You're not on the trusted list.",
+  "warehousemanager.refuse.break": "%s's warehouse. Only trusted players can break that.",
+  "warehousemanager.refuse.place": "%s's manager already runs this building (at %s).",
+  "warehousemanager.refuse.place.unowned": "A manager already runs this building (at %s).",
+  "warehousemanager.roster.title.mine": "Your warehouse",
+  "warehousemanager.roster.title.owned": "%s's warehouse",
+  "warehousemanager.roster.title.unowned": "Unclaimed warehouse",
+  "warehousemanager.roster.hint.editable": "Click a name to trust or untrust it. Green: online.",
+  "warehousemanager.roster.hint.readonly": "Only the owner can change who is trusted.",
+  "warehousemanager.roster.hint.claim": "Sneak and right-click the block to claim it.",
+  "warehousemanager.roster.empty": "Nobody else has joined this world yet."
 }

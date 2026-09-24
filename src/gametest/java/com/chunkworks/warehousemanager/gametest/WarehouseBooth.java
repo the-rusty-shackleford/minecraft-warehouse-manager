@@ -2,35 +2,50 @@
 package com.chunkworks.warehousemanager.gametest;
 
 import com.chunkworks.warehousemanager.*;
+import com.chunkworks.warehousemanager.client.ManagerScreen;
+import com.mojang.authlib.GameProfile;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.screens.PauseScreen;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import org.slf4j.*;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /** Hardware-client gate: a stone room with five chests along one wall, a double chest and the
  * manager, photographed after it settles: the row of labelled chests, one sign up close, the
- * double chest's two signs, the block itself, and its chest screen. Screenshots need a human
- * eye; this fixture never ships. */
+ * double chest's two signs, the block itself, and its chest screen; then the recipe book and
+ * EMI drawing from the chests, the furnished hut, the trust panel before and after a click, and
+ * a stranger's refusal at nfx's hut. Screenshots need a human eye; this fixture never ships. */
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
 public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
     private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2), TABLE = new BlockPos(3, 100, 3);
+    private static final UUID NFX = UUID.nameUUIDFromBytes("nfx".getBytes(StandardCharsets.UTF_8)), JDRUM = UUID.nameUUIDFromBytes("Jdrum12".getBytes(StandardCharsets.UTF_8));
     private static int tick;
     private static boolean emiFilled;
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
@@ -76,7 +91,7 @@ public final class WarehouseBooth {
                     LOG.info("warehousemanager booth: {} loose items at tick 200, player holds {}", loose.size(), p.getInventory().items.stream().filter(s -> !s.isEmpty()).toList());
                 }); }
                 case 205 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
-                case 225 -> { check(mc.screen instanceof ContainerScreen, "manager opens the vanilla chest screen"); photo(mc, "04-manager-screen"); }
+                case 225 -> { check(mc.screen instanceof ManagerScreen, "manager opens its own chest screen, panel unclaimed"); photo(mc, "04-manager-screen"); }
                 case 235 -> { mc.player.closeContainer();
                     server(mc, p -> { p.serverLevel().setBlock(TABLE, Blocks.CRAFTING_TABLE.defaultBlockState(), 3); p.getInventory().clearContent();
                         // The book's open and filter flags live on the server's copy and travel to the client with the award below.
@@ -144,7 +159,50 @@ public final class WarehouseBooth {
                     photo(mc, "08-emi-fill-from-chests");
                     mc.player.closeContainer();
                 }
-                case 545 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // Ownership (D-0006): the booth player claims the room's manager, two players this
+                // world has seen appear in the trust panel, a click trusts one; then nfx's hut
+                // refuses the booth player at the manager and at a chest, on the action bar.
+                case 545 -> server(mc, p -> {
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                    check(m.claim(p), "the booth player claims the room's manager");
+                    forget(p.server, p.getUUID());
+                    seen(p.server, NFX, "nfx"); seen(p.server, JDRUM, "Jdrum12");
+                    p.teleportTo(p.serverLevel(), 0.5, 100, 3.5, 180, 8);
+                });
+                case 560 -> server(mc, p -> ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p));
+                case 580 -> {
+                    check(mc.screen instanceof ManagerScreen, "the manager opens its own screen for the owner");
+                    var listing = Roster.Client.listing(mc.player.containerMenu.containerId);
+                    check(listing != null && listing.owned() && listing.editable() && listing.entries().size() == 2 && listing.entries().stream().noneMatch(Roster.Entry::trusted),
+                            "the panel lists the two players this world has seen, none trusted: " + listing);
+                    photo(mc, "09-trust-panel");
+                    var screen = (ManagerScreen) mc.screen;
+                    check(screen.mouseClicked(screen.panelLeft() + 10, screen.rowTop(0) + 6, 0), "a click lands on the first row");
+                }
+                case 600 -> {
+                    var listing = Roster.Client.listing(mc.player.containerMenu.containerId);
+                    check(listing != null && listing.entries().get(0).trusted() && !listing.entries().get(1).trusted(), "the click trusted the first row: " + listing);
+                    server(mc, p -> check(((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).ownership().trusted().size() == 1, "the server holds the trust"));
+                    photo(mc, "10-trust-panel-one-trusted");
+                    mc.player.closeContainer();
+                }
+                case 610 -> server(mc, p -> {
+                    var hut = (ManagerBlockEntity) p.serverLevel().getBlockEntity(HUT_MANAGER);
+                    check(hut.claim(NFX, "nfx"), "nfx owns the hut");
+                    p.teleportTo(p.serverLevel(), 13.5, 100, -1.5, -90, 10);
+                });
+                case 640 -> server(mc, p -> {
+                    var result = p.gameMode.useItemOn(p, p.serverLevel(), ItemStack.EMPTY, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(HUT_MANAGER).add(-0.5, 0, 0), Direction.WEST, HUT_MANAGER, false));
+                    check(p.containerMenu == p.inventoryMenu, "a stranger is refused at nfx's manager: " + result);
+                });
+                case 650 -> photo(mc, "11-refused-at-the-door");
+                case 655 -> server(mc, p -> {
+                    var hut = (ManagerBlockEntity) p.serverLevel().getBlockEntity(HUT_MANAGER);
+                    var chest = hut.units().get(0).primary();
+                    var result = p.gameMode.useItemOn(p, p.serverLevel(), ItemStack.EMPTY, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(chest), Direction.UP, chest, false));
+                    check(p.containerMenu == p.inventoryMenu, "a stranger is refused at nfx's chest: " + result);
+                });
+                case 670 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }
@@ -190,6 +248,25 @@ public final class WarehouseBooth {
         l.setBlock(new BlockPos(15, 104, 2), Blocks.GLOWSTONE.defaultBlockState(), 3);
         l.setBlock(HUT_MANAGER, WarehouseManager.BLOCK.get().defaultBlockState(), 3);
         ((ManagerBlockEntity) l.getBlockEntity(HUT_MANAGER)).buffer().setItem(0, new ItemStack(Items.CHEST, 6));
+    }
+    /** effects: drops every player-data file but the booth player's own: the booth world is a copy
+     * of the GameTest world and carries its mock players, whom no cache can name. */
+    private static void forget(MinecraftServer server, UUID keep) {
+        var dir = server.getWorldPath(LevelResource.PLAYER_DATA_DIR);
+        if (!Files.isDirectory(dir)) return;
+        try (var files = Files.list(dir)) {
+            for (var f : files.toList()) if (!f.getFileName().toString().startsWith(keep.toString())) Files.delete(f);
+        } catch (IOException e) { throw new UncheckedIOException(e); }
+    }
+    /** effects: makes the server count the player among those this world has seen: a player-data
+     * file under their id and their name in the profile cache. */
+    private static void seen(MinecraftServer server, UUID id, String name) {
+        try {
+            var dir = server.getWorldPath(LevelResource.PLAYER_DATA_DIR);
+            Files.createDirectories(dir);
+            NbtIo.writeCompressed(new CompoundTag(), dir.resolve(id + ".dat"));
+        } catch (IOException e) { throw new UncheckedIOException(e); }
+        server.getProfileCache().add(new GameProfile(id, name));
     }
     private static void server(Minecraft mc, Consumer<ServerPlayer> action) {
         var server = mc.getSingleplayerServer(); var id = mc.player.getUUID();

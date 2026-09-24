@@ -2,41 +2,55 @@
 package com.chunkworks.warehousemanager;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.SignBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.*;
 
-/** The loaded managers of each level, and which container each one has claimed, so two managers in
- * one building never fight over a chest and a placed or broken chest wakes the right manager. */
-final class Managers {
+/** The loaded managers of each level, for wake-ups and for finding whose building a block stands
+ * in; and the claims each manager holds on its containers, which live in {@link Claims} so they
+ * survive the manager's chunk unloading. A container stays its manager's until that manager's
+ * block is gone. */
+public final class Managers {
     private static final Map<LevelAccessor, Set<ManagerBlockEntity>> LOADED = new WeakHashMap<>();
-    private static final Map<LevelAccessor, Map<Long, BlockPos>> CLAIMS = new WeakHashMap<>();
     private Managers() {}
     static synchronized void add(ManagerBlockEntity m) { LOADED.computeIfAbsent(m.getLevel(), l -> new HashSet<>()).add(m); }
-    static synchronized void remove(ManagerBlockEntity m) {
+    /** effects: forgets the manager as loaded; its claims stand (the chunk unload path). */
+    public static synchronized void remove(ManagerBlockEntity m) {
         var set = LOADED.get(m.getLevel());
         if (set != null) set.remove(m);
-        releaseClaims(m);
     }
-    /** effects: claims the container for the manager unless another loaded manager holds it;
-     * returns whether the claim is the manager's. */
-    static synchronized boolean claim(ManagerBlockEntity m, BlockPos container) {
-        var claims = CLAIMS.computeIfAbsent(m.getLevel(), l -> new HashMap<>());
-        var owner = claims.get(container.asLong());
-        if (owner == null || owner.equals(m.getBlockPos()) || !stillLoaded(m, owner)) { claims.put(container.asLong(), m.getBlockPos().immutable()); return true; }
-        return false;
+    /** effects: claims every block of the unit for the manager unless another manager whose block
+     * still stands holds its primary block; returns whether the unit is the manager's. */
+    static boolean claim(ManagerBlockEntity m, ManagerBlockEntity.Unit unit) {
+        var level = (ServerLevel) m.getLevel();
+        var claims = Claims.of(level);
+        var holder = claims.holder(unit.primary());
+        if (holder != null && !holder.equals(m.getBlockPos()) && !stale(level, holder)) return false;
+        for (var p : unit.positions()) claims.put(p, m.getBlockPos());
+        return true;
     }
-    private static boolean stillLoaded(ManagerBlockEntity m, BlockPos owner) {
-        var set = LOADED.get(m.getLevel());
-        if (set == null) return false;
-        for (var other : set) if (other.getBlockPos().equals(owner) && !other.isRemoved()) return true;
-        return false;
+    /** effects: whether the holder's chunk is loaded and no manager block stands there any more. */
+    private static boolean stale(ServerLevel level, BlockPos holder) {
+        return level.hasChunkAt(holder) && !level.getBlockState(holder).is(WarehouseManager.BLOCK);
     }
     /** effects: drops every claim the manager holds. */
-    static synchronized void releaseClaims(ManagerBlockEntity m) {
-        var claims = CLAIMS.get(m.getLevel());
-        if (claims != null) claims.values().removeIf(p -> p.equals(m.getBlockPos()));
+    static void releaseClaims(ManagerBlockEntity m) {
+        if (m.getLevel() instanceof ServerLevel level) Claims.of(level).release(m.getBlockPos());
+    }
+    /** effects: the manager holding the container at the position, or null when it is unclaimed
+     * or its manager's block is gone; loads the manager's chunk if it must. */
+    public static ManagerBlockEntity holder(ServerLevel level, BlockPos container) {
+        var pos = Claims.of(level).holder(container);
+        if (pos == null) return null;
+        return level.getBlockEntity(pos) instanceof ManagerBlockEntity m ? m : null;
+    }
+    /** effects: the manager whose trust governs the block at the position: the manager itself, or
+     * the holder of a claimed container; null when neither. */
+    public static ManagerBlockEntity guardian(ServerLevel level, BlockPos pos) {
+        if (level.getBlockEntity(pos) instanceof ManagerBlockEntity m) return m;
+        return holder(level, pos);
     }
     /** effects: the loaded manager whose building contains the position, or null. */
     static synchronized ManagerBlockEntity covering(LevelAccessor level, BlockPos pos) {

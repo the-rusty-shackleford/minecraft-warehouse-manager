@@ -11,13 +11,15 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BarrelBlock;
@@ -34,10 +36,13 @@ import java.util.*;
  * in its group's container; the six-row buffer is drained the same way. Idle ticks do nothing.
  * <p>AF: {@code units} are the claimed containers of the last scan, nearest first; {@code plan}
  * is the current assignment; {@code labels} the last assignment kept for stickiness; the cursor
- * pair is the next slot to inspect; {@code settled} is whether a whole pass found nothing to move.
+ * pair is the next slot to inspect; {@code settled} is whether a whole pass found nothing to move;
+ * {@code ownership} is who claimed the manager and whom they trust (D-0006), {@code ownerName}
+ * and {@code names} the last names seen for them, since names change.
  * <p>RI: 0 <= unitCursor <= units.size(); plan is empty or covers every unit id; fill is non-null
- * only while a scan is running. */
+ * only while a scan is running; ownerName is empty exactly while unowned. */
 public final class ManagerBlockEntity extends BlockEntity {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("Warehouse Manager");
     /** One managed container: its slots may span two blocks (a double chest). */
     public record Unit(String id, BlockPos primary, List<BlockPos> positions) {
         public Unit { positions = List.copyOf(positions); }
@@ -61,6 +66,9 @@ public final class ManagerBlockEntity extends BlockEntity {
     private String waitingNode;
     private boolean settled, scanned, registered;
     private BlockPos min, max;
+    private Access.Ownership ownership = Access.Ownership.NONE;
+    private String ownerName = "";
+    private final Map<UUID, String> names = new HashMap<>();
 
     public ManagerBlockEntity(BlockPos pos, BlockState state) {
         super(WarehouseManager.BLOCK_ENTITY.get(), pos, state);
@@ -92,13 +100,43 @@ public final class ManagerBlockEntity extends BlockEntity {
     }
     /** effects: schedules a rescan within two ticks unless one is running. */
     public void rescanSoon() { if (fill == null) rescanIn = Math.min(rescanIn, 2); }
-    /** effects: unregisters and drops claims; the block is gone. */
-    public void release() { Managers.remove(this); registered = false; }
+    /** effects: unregisters and drops every claim; the block is gone. */
+    public void release() { Managers.remove(this); Managers.releaseClaims(this); registered = false; }
+    /** effects: unregisters; the claims stand, since the chunk unloading takes this path too. */
     @Override public void setRemoved() { super.setRemoved(); Managers.remove(this); registered = false; }
 
-    /** effects: opens the buffer for the player and shows a one-line status on the action bar. */
-    public void open(Player player) {
-        player.openMenu(new SimpleMenuProvider((id, inv, p) -> ChestMenu.sixRows(id, inv, buffer), TITLE));
+    /** effects: who owns this manager and whom they trust. */
+    public Access.Ownership ownership() { return ownership; }
+    /** effects: the owner's last-known name, empty while unowned. */
+    public String ownerName() { return ownerName; }
+    /** effects: the last name seen for a player on the roster, or null. */
+    public String nameOf(UUID id) { return names.get(id); }
+    /** effects: whether the player may take the action here, counting the operator bypass. */
+    public boolean permits(Player player, Access.Action action) { return Access.permits(ownership, player.getUUID(), action, Guard.bypass(player)); }
+    /** effects: makes the player the owner of an unowned manager; returns whether it did. */
+    public boolean claim(ServerPlayer player) { return claim(player.getUUID(), player.getScoreboardName()); }
+    public boolean claim(UUID who, String name) {
+        if (ownership.owned()) return false;
+        ownership = ownership.claimedBy(who);
+        ownerName = name;
+        setChanged();
+        LOG.info("{} claimed the warehouse at {}", name, worldPosition.toShortString());
+        return true;
+    }
+    /** requires: owned; effects: puts the player on or off the roster, remembering the name. */
+    public void trust(UUID who, String name, boolean trusted) {
+        ownership = trusted ? ownership.trusting(who) : ownership.distrusting(who);
+        if (trusted) names.put(who, name); else names.remove(who);
+        setChanged();
+    }
+
+    /** effects: opens the buffer with the trust panel for a player the owner trusts and shows a
+     * one-line status on the action bar; a stranger sees only whose warehouse it is. */
+    public void open(ServerPlayer player) {
+        if (!permits(player, Access.Action.OPEN_MANAGER)) { player.displayClientMessage(Guard.refusal("warehousemanager.refuse.open", this), true); return; }
+        if (player.getUUID().equals(ownership.owner())) ownerName = player.getScoreboardName();
+        var id = player.openMenu(new SimpleMenuProvider((cid, inv, p) -> new ManagerMenu(cid, inv, this), TITLE));
+        if (id.isPresent()) Roster.send(player, this, id.getAsInt());
         player.displayClientMessage(status(), true);
     }
     /** effects: a status line for the action bar. */
@@ -127,15 +165,30 @@ public final class ManagerBlockEntity extends BlockEntity {
     }
 
     private void startScan(ServerLevel sl) {
+        fill = new FloodFill(grid(sl, null), worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(), BUDGET);
+    }
+    /** effects: the level as the fill sees it: full solid cubes and unloaded cells are walls, cells
+     * under open sky too; every manager block the walk touches is handed to {@code managers}. */
+    private static FloodFill.Grid grid(Level level, List<BlockPos> managers) {
         var cursor = new BlockPos.MutableBlockPos();
-        fill = new FloodFill(new FloodFill.Grid() {
+        return new FloodFill.Grid() {
             @Override public boolean passable(int x, int y, int z) {
                 cursor.set(x, y, z);
-                if (!sl.isInWorldBounds(cursor) || !sl.hasChunkAt(cursor)) return false;
-                return !sl.getBlockState(cursor).isCollisionShapeFullBlock(sl, cursor);
+                if (!level.isInWorldBounds(cursor) || !level.hasChunkAt(cursor)) return false;
+                var state = level.getBlockState(cursor);
+                if (managers != null && state.is(WarehouseManager.BLOCK)) managers.add(cursor.immutable());
+                return !state.isCollisionShapeFullBlock(level, cursor);
             }
-            @Override public boolean openSky(int x, int y, int z) { return y >= sl.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z); }
-        }, worldPosition.getX(), worldPosition.getY(), worldPosition.getZ(), BUDGET);
+            @Override public boolean openSky(int x, int y, int z) { return y >= level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z); }
+        };
+    }
+    /** effects: the manager whose building the position stands in, found by walking the building
+     * from there now, in full; null when the walk touches none. Milliseconds at the cell cap. */
+    public static BlockPos managerIn(Level level, BlockPos pos) {
+        var found = new ArrayList<BlockPos>();
+        var walk = new FloodFill(grid(level, found), pos.getX(), pos.getY(), pos.getZ(), BUDGET);
+        while (found.isEmpty() && !walk.step(CELLS_PER_TICK)) {}
+        return found.isEmpty() ? null : found.get(0);
     }
 
     private void finishScan(ServerLevel sl) {
@@ -163,7 +216,7 @@ public final class ManagerBlockEntity extends BlockEntity {
         else { min = worldPosition; max = worldPosition; }
         Managers.releaseClaims(this);
         var claimed = new ArrayList<Unit>();
-        for (var u : found.values()) if (container(sl, u) != null && Managers.claim(this, u.primary())) claimed.add(u);
+        for (var u : found.values()) if (container(sl, u) != null && Managers.claim(this, u)) claimed.add(u);
         claimed.sort(Comparator.comparingInt(u -> (int) u.primary().distSqr(worldPosition)));
         units = List.copyOf(claimed);
         var demand = new HashMap<String, Integer>();
@@ -188,7 +241,8 @@ public final class ManagerBlockEntity extends BlockEntity {
         labels = new HashMap<>();
         for (var e : plan.labels().entrySet()) labels.put(e.getKey(), e.getValue().node());
         label(sl);
-        scanned = true; settled = false; unitCursor = 0; slotCursor = 0; movesThisPass = 0;
+        // With nothing claimed there is nothing to sort: a manager in an empty room is settled.
+        scanned = true; settled = units.isEmpty(); unitCursor = 0; slotCursor = 0; movesThisPass = 0;
         setChanged();
     }
 
@@ -410,6 +464,18 @@ public final class ManagerBlockEntity extends BlockEntity {
         var l = new CompoundTag();
         labels.forEach(l::putString);
         tag.put("Labels", l);
+        if (ownership.owned()) {
+            tag.putUUID("Owner", ownership.owner());
+            tag.putString("OwnerName", ownerName);
+            var roster = new ListTag();
+            for (var id : ownership.trusted()) {
+                var entry = new CompoundTag();
+                entry.putUUID("Id", id);
+                entry.putString("Name", names.getOrDefault(id, ""));
+                roster.add(entry);
+            }
+            tag.put("Trusted", roster);
+        }
     }
     @Override protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
@@ -417,6 +483,20 @@ public final class ManagerBlockEntity extends BlockEntity {
         labels = new HashMap<>();
         var l = tag.getCompound("Labels");
         for (var k : l.getAllKeys()) labels.put(k, l.getString(k));
+        ownership = Access.Ownership.NONE;
+        ownerName = "";
+        names.clear();
+        if (tag.hasUUID("Owner")) {
+            ownership = ownership.claimedBy(tag.getUUID("Owner"));
+            ownerName = tag.getString("OwnerName");
+            var roster = tag.getList("Trusted", Tag.TAG_COMPOUND);
+            for (int i = 0; i < roster.size(); i++) {
+                var entry = roster.getCompound(i);
+                if (!entry.hasUUID("Id") || entry.getUUID("Id").equals(ownership.owner())) continue;
+                ownership = ownership.trusting(entry.getUUID("Id"));
+                names.put(entry.getUUID("Id"), entry.getString("Name"));
+            }
+        }
         rescanIn = 20;
     }
 }

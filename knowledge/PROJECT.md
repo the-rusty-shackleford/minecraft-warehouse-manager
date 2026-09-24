@@ -1,6 +1,6 @@
 # Warehouse Manager
 
-Version 0.1.0, unreleased. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.3.0, built 2026-09-24, unreleased. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
 
 Rusty requested on 2026-09-22 a craftable **Warehouse Manager** block that, placed inside a
 building, tracks every chest in that building across its floors, organises their contents by
@@ -12,10 +12,18 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
 
 - `src/domain` is JDK-only: `Taxonomy` (the group tree), `Classifier` (ordered rules over
   `ItemFacts`), `Planner` (groups to containers), `FloodFill` (incremental, budgeted, sky-aware),
-  `SignText` (layout). 27 JUnit tests with partitions at the top of each file.
+  `SignText` (layout), `Pooling` (what a recipe click draws), `Access` (owner, trusted,
+  stranger; which actions each tier gets). 46 JUnit tests with partitions at the top of each file.
 - `src/main` adapts: `Facts` (stack to facts, cached per item), `ManagerBlockEntity` (scan,
-  plan, sort, label, buffer, status), `Signs`, `Transfer`, `Managers` (claims and rescan wake-ups).
-- `src/gametest`: six real-server GameTests on a two-floor house, plus the photo booth.
+  plan, sort, label, buffer, status, ownership and roster, the synchronous placement walk),
+  `ManagerBlock` (placement refusal, placer owns, claim by sneak-click), `Signs`, `Transfer`,
+  `Managers` (loaded managers, wake-ups, claiming through `Claims`), `Claims` (saved data:
+  container to manager), `Guard` (the refusals through NeoForge events and the blast
+  protection), `ManagerMenu` and `Roster` (the trust panel's menu and wire), `Config`
+  (`operators_bypass`), `Pooled` (crafting from the chests), the EMI plugin, three mixins
+  (recipe placement, the crafting table's position, container validity for trust withdrawal),
+  and `client/ManagerScreen`.
+- `src/gametest`: fourteen real-server GameTests on a two-floor house, plus the photo booth.
 
 ## 0.2.0 (was 0.1.1)
 
@@ -37,9 +45,32 @@ menu, its own. An EMI plugin now stands a warehouse handler first for the crafti
 (D-0005); the booth runs with EMI and asserts EMI counts the chests and fills from them.
 The 0.2.0 booth ran without EMI, which is how this shipped broken.
 
+## 0.3.0: ownership (D-0006, built 2026-09-24)
+
+Rusty asked that pooled crafting, the manager and its claimed containers be bound to an owner
+and a trusted roster toggled from the manager's own screen, that a second manager cannot be
+placed into an owned building, and that claims persist. [D-0006](decisions/D-0006.md) holds
+the design, Rusty's calls, the rejected alternatives, and the calls made on its three open
+points during the build (explosion protection ships for every manager; hoppers stay a
+documented limit; the refusal wording). The README's "Who may use it" is the reference.
+
+What the build settled beyond the decision: the open refusal only stops the block from
+opening (`setUseBlock(FALSE)`), so an item in hand is still used on the chest as vanilla
+does; the trust-withdrawal close rides on `BaseContainerBlockEntity.stillValid`, which the
+server checks every tick for every open menu, so nothing tracks who has what open; a manager
+in an empty room now reports itself settled (it never did before, its sort pass being the
+only place that set the flag); mock players in GameTests are creative, so a refused placement
+is asserted on the block, not the stack count.
+
 ## Status
 
-Rusty authorized release on 2026-09-22 together with Magical Map 0.2.0. The booth passed
-and its five photos were inspected; see
-[release verification](../devtools/verification/release-0.1.0.md). Published as 0.1.0 on
-GitHub Releases and added to the pack.
+0.3.0 is built and verified (46 JUnit, 14 GameTests, the booth with EMI; see
+[release verification](../devtools/verification/release-0.3.0.md)) and **not released**:
+Rusty has not seen it. Next: Rusty vets the panel and the refusal photos, then the release
+recipe (tag, GitHub release, `modhub add-file --replaces`, `set-version`, `assemble`, restart
+when the server is empty). On the box every existing manager is unowned until its owner
+sneaks and right-clicks it; tell Rusty that first.
+
+Rusty authorized release of 0.1.0 on 2026-09-22 together with Magical Map 0.2.0, of 0.2.0 on
+2026-09-23 as pack 1.56.0 and of 0.2.1 the same night as pack 1.56.2. Booths passed and
+their photos were inspected; see [devtools/verification](../devtools/verification/).

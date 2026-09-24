@@ -4,7 +4,9 @@ A block for **Minecraft 1.21.1 / NeoForge 21.1.248** that turns a building full 
 labelled warehouse. Place it inside a building and it finds every chest, trapped chest and barrel
 under that roof, across every floor, decides which container holds which kind of thing, moves
 the contents until each container holds one group, and writes a sign on each one. Open the
-manager like a chest, drop anything in, and it goes to the right container on its own.
+manager like a chest, drop anything in, and it goes to the right container on its own. The
+warehouse is yours: crafting from it, opening it and its chests are for you and the players
+you trust, chosen by clicking names in the manager's own screen.
 
 ## Crafting
 
@@ -82,6 +84,59 @@ older pack without this handler.
 **Existing contents move.** That is the point of placing the block, and it will surprise anyone
 sharing the building who did not expect their sorting to change.
 
+## Who may use it
+
+Whoever places the manager owns it. Open it and a panel beside the chest grid lists every
+player this world has seen (online ones in green); click a name to trust or untrust them.
+Three tiers follow from that: the owner, the trusted, and everyone else. What the tiers get:
+
+| Action | Owner and trusted | Everyone else |
+|---|---|---|
+| Recipe book and EMI count the building's chests | yes | no: their own inventory, as vanilla |
+| A recipe click draws ingredients from the chests | yes | no: vanilla fill |
+| Opening the manager's own inventory, dropping chests in to furnish | yes | refused |
+| Opening a chest or barrel the manager holds | yes | refused |
+| Breaking a held container or the manager | yes | refused |
+| Changing who is trusted | owner only | no |
+
+A refusal shows on the action bar: "Rusty's warehouse. You're not on the trusted list." for an
+open, "Rusty's warehouse. Only trusted players can break that." for a break. Right-clicking a
+held chest while holding a block still places the block against it, as vanilla does when a
+block does not open. Withdrawing trust closes any of the warehouse's containers that player has
+open on the server's next tick. The manager itself keeps sorting, routing and furnishing for
+everyone's deposits; it acts as a block, not as a player.
+
+**Claimed containers and the manager survive explosions.** Both are struck from every
+explosion's block list, so a creeper at the door leaves the warehouse standing. This holds for
+every manager, claimed or not.
+
+**One building, one manager.** Placing a manager into a building that already has one is
+refused, with whose manager it is and where on the action bar; the item stays in hand. The
+check is a full walk of the building at placement time, so a shed with its own manager next
+door is fine as long as a wall separates them. Knock a hole through a shared wall and the two
+buildings are one: the older manager keeps the building and claims the containers on both
+sides, and the newer manager cannot be placed until the hole is closed. Ownership is
+transferred by breaking the manager and placing a new one.
+
+**Claims persist.** Which manager holds which container is kept in the level's saved data
+(`data/warehousemanager_claims.dat`), so a container stays its manager's while that manager's
+chunk is unloaded and while its owner is offline. A claim ends when the manager's block is
+broken; the manager re-checks its claims on load and every ten seconds.
+
+**A manager from before 0.3.0 has no owner** and stays open to everyone until somebody sneaks
+and right-clicks it, which makes them the owner (first claimant wins; the server log records
+who). Its panel says so until then.
+
+**Operators are not above the roster** unless the server sets `operators_bypass = true` in
+`serverconfig/warehousemanager-server.toml` of the world, which lets permission level 2 and up
+open, take from, break and manage every warehouse for administration by hand. Creative mode
+grants nothing.
+
+**The limit that remains: hoppers.** Anyone can place blocks inside the building, and a
+hopper under a held chest drains it with no player interaction to refuse. Refusing block
+placement by strangers inside an owned building would be a land-claim feature and is not part
+of this mod.
+
 ## Tuning the groups
 
 Every group has an item tag `warehousemanager:category/<group>` (for example
@@ -107,19 +162,39 @@ their mod uses the common tags or the usual naming.
   under open sky, or a building past the 20,000-cell cap. Put a roof over it or move the manager
   nearer.
 - A container is not labelled when every face is blocked and no sign stands within a block.
-- Breaking the manager spills whatever was waiting in it. Signs stay.
+- Breaking the manager spills whatever was waiting in it. Signs stay, claims are released.
+- "…'s warehouse. You're not on the trusted list." on a chest: the chest is held by a manager
+  whose owner has not trusted you. Ask them; they toggle names in the manager's screen. The
+  same line on the manager block itself means the same thing.
+- A recipe book or EMI that shows nothing craftable from the chests, with no refusal shown,
+  means the same: the tally is only sent to the owner and their trusted players. The server
+  log line "<player> opened a table in the building at <manager>: sending N kinds" appears
+  only for them.
+- "A manager already runs this building (at x, y, z)" when placing: walk to that position;
+  it is the manager that owns the building, possibly through a gap in a wall you did not
+  know was there.
+- The server log records "<name> claimed the warehouse at <pos>" and "<owner> trusted
+  <name> at the warehouse at <pos>" (or "distrusted"), so a dispute over who owns what has
+  a paper trail.
 
 ## Building
 
 Java 21. `./gradlew test` runs the JDK-only domain tests (classifier, planner, flood fill, sign
-layout, taxonomy). `./gradlew runGameTestServer` runs the real-server GameTests (a two-floor house
-with seven containers gets sorted and labelled, an outside chest is untouched, the buffer routes,
-an existing sign is rewritten, a double chest gets two signs, breaking spills). `./gradlew
-runPhotoBooth` opens a client on the booth world for a visual check of the signs. `./gradlew
-build` produces `build/libs/warehousemanager-<version>.jar`.
+layout, taxonomy, pooling, access tiers). `./gradlew runGameTestServer` runs the real-server
+GameTests (a two-floor house with seven containers gets sorted and labelled, an outside chest
+is untouched, the buffer routes, an existing sign is rewritten, a double chest gets two signs,
+breaking spills, crafting draws from the chests; the owner and a trusted player draw and open
+while a stranger is refused, a second manager is refused through a hole in the wall, explosions
+leave held chests standing, claims outlive the manager's unloading). `./gradlew runPhotoBooth`
+opens a client on the booth world for a visual check of the signs, the recipe book, EMI, the
+trust panel and a refusal. `./gradlew build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
+**0.3.0**: the warehouse has an owner and a trusted roster; crafting from the chests, the
+manager and its containers are theirs; one manager per building; claims persist across
+unloads; claimed containers and the manager survive explosions; a manager in an empty room
+reports itself settled (before, its status never left "sorting" until a chest arrived).
 **0.2.1**: EMI's craftables view and fill buttons count the building's chests (0.2.0 fed only
 the vanilla recipe book, which EMI hides behind its own; every player with EMI saw nothing).
 **0.2.0**: crafting tables in the building draw on its chests; overflow containers and
@@ -128,5 +203,5 @@ which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an em
 is furnished from chest items dropped into the manager; each container keeps only its own
 signs (stacked chests had shared one). Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 39 JUnit tests, 10 real-server GameTests and the photo booth; see
+Verified: 46 JUnit tests, 14 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).

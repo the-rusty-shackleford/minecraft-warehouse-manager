@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 Rusty Shackleford and nfx. SPDX-License-Identifier: AGPL-3.0-or-later */
 package com.chunkworks.warehousemanager;
 
+import com.chunkworks.warehousemanager.domain.Access;
 import com.chunkworks.warehousemanager.domain.Pooling;
 import com.chunkworks.warehousemanager.mixin.CraftingMenuAccessor;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
@@ -21,7 +22,8 @@ import java.util.*;
 
 /** Crafting at a table inside a managed building draws on the building's containers: the client's
  * recipe book counts them as available, and a clicked recipe pulls its shortfall out of the
- * chests into the player's inventory before the grid is filled, so crafting consumes it. */
+ * chests into the player's inventory before the grid is filled, so crafting consumes it. Both
+ * halves are for the owner and the players they trust; anyone else gets vanilla (D-0006). */
 public final class Pooled {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("Warehouse Manager");
     private Pooled() {}
@@ -90,7 +92,7 @@ public final class Pooled {
     }
     static void send(ServerPlayer player, CraftingMenu menu) {
         var m = managerFor(menu);
-        if (m == null) return;
+        if (m == null || !m.permits(player, Access.Action.SEE_STOCK)) return;
         var counts = tally(m);
         LOG.info("{} opened a table in the building at {}: sending {} kinds", player.getScoreboardName(), m.getBlockPos().toShortString(), counts.size());
         PacketDistributor.sendToPlayer(player, new Contents(menu.containerId, counts));
@@ -102,7 +104,7 @@ public final class Pooled {
      * for a table outside any managed building. */
     public static void pull(ServerPlayer player, CraftingMenu menu, RecipeHolder<?> holder, boolean placeAll) {
         var m = managerFor(menu);
-        if (m == null || !(holder.value() instanceof CraftingRecipe recipe) || !player.getRecipeBook().contains(holder)) return;
+        if (m == null || !m.permits(player, Access.Action.DRAW) || !(holder.value() instanceof CraftingRecipe recipe) || !player.getRecipeBook().contains(holder)) return;
         var pooled = tally(m);
         var all = new StackedContents();
         player.getInventory().fillStackedContents(all);
