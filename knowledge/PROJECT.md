@@ -16,9 +16,11 @@ on `RecipeCollection.canCraft`; EMI through `Expanded`, a subclass of its invent
 gathers candidates by the reachable items. Three GameTests (a torch from a log and a coal, a
 shift-click for three, a locked planks recipe under doLimitedCrafting) and three booth steps
 (the vanilla book, EMI's list and fill, the rifle from iron and coal with the gun jars), 78
-checks; 80 JUnit, 25 GameTests. Carries 0.4.1, never released on its own. Committed, not
-tagged; waits on Rusty's go for pack 1.64.0 in place of 0.4.1
-([record](../devtools/verification/release-0.5.0.md)).
+checks; 80 JUnit, 25 GameTests. Carries 0.4.1, never released on its own
+([record](../devtools/verification/release-0.5.0.md)). Released 2026-09-25 as tag v0.5.0 and
+deployed as pack 1.64.0 at 06:14 UTC on Rusty's "go", with Backpacks+ 0.4.0, Magical Map 0.3.1
+and Schnappviecher 0.1.2; not yet seen by Rusty in play (the rifle from the chests at their
+warehouse is the thing to ask about).
 
 0.4.1 (2026-09-25, early): Rusty's receiver ("steel in hand, redstone in the chests, flashed
 red all around") was not a mixed-source failure: the two reproductions of that (a GameTest with
@@ -32,8 +34,8 @@ clicking a recipe again piles the grid up, vanilla's own `getStackSize` rule as 
 `Pooling.wanted` (Rusty's bullets); the Insert slot's sink sends a fresh index at once (the
 booth's index step had raced the one-second refresh); one INFO line per fill. 64 JUnit, 22
 GameTests, the booth with EMI (57 checks); jar sha1 `959eeb41ef634a18220a27d47b539f4401623896`
-(171271 bytes); [record](../devtools/verification/release-0.4.1.md). Committed, not tagged;
-waits on Rusty's go for pack 1.64.0.
+(171271 bytes); [record](../devtools/verification/release-0.4.1.md). Shipped inside 0.5.0
+(pack 1.64.0), never tagged on its own.
 
 0.4.0 (2026-09-24, late): the manager's screen is the warehouse's index (D-0009): every kind
 the building holds under its taxonomy heading with its total, a search box (name, group,

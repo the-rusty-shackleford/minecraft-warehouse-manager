@@ -63,6 +63,13 @@ sub-crafts away:
 `./gradlew clean build` on Xephyr `:7`, llvmpipe, muted, with EMI and the two gun jars in
 `run/booth/mods`: JUnit 80 (64 in 0.4.1 plus the 16 above), GameTests 25 (22 plus the three
 above), booth COMPLETE, 78 checks. Jar `warehousemanager-0.5.0.jar` sha1
-`13321a5dbf8c0440b3e4d36af00fbd7c7ffe7b02` (197176 bytes). Not released; waits on Rusty's go,
-meant for pack 1.64.0 with Backpacks+ 0.4.0 and Magical Map 0.3.1, in place of 0.4.1
-(`--replaces mods/warehousemanager-0.4.0.jar`).
+`13321a5dbf8c0440b3e4d36af00fbd7c7ffe7b02` (197176 bytes).
+
+## Live deployment
+
+Published as v0.5.0 at commit e4c177d and deployed in pack 1.64.0 on 2026-09-25 with Backpacks+
+0.4.0, Magical Map 0.3.1 and Schnappviecher 0.1.2, on Rusty's "go". The downloaded release asset
+and the installed server jar match the SHA-1 above; 0.4.0 is gone from `/data/mods`. Restart
+06:14:11 UTC with nobody on, `Done (2.808s)!` at 06:14:26, "warehousemanager (version 0.4.0 ->
+0.5.0)", 20.000 TPS, Mod Hub parity clean. Record: the server repo's
+`knowledge/releases/pack-1.64.0.md`.
