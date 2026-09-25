@@ -4,6 +4,6 @@
   "package": "com.chunkworks.warehousemanager.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": ["RecipeBookMenuMixin", "CraftingMenuAccessor", "BaseContainerBlockEntityMixin"],
-  "client": ["client.RecipeBookComponentMixin"],
+  "client": ["client.RecipeBookComponentMixin", "client.RecipeCollectionMixin"],
   "injectors": {"defaultRequire": 1}
 }

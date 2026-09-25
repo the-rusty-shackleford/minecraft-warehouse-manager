@@ -31,7 +31,9 @@ import java.util.*;
 
 /** Real-server partitions: a crafting table in the building draws recipe ingredients from a chest and crafting consumes them, an outside table draws nothing; a recipe the
  * player has not unlocked fills and is unlocked, unless doLimitedCrafting is on (D-0007); a fill
- * that cannot be covered names what is short (D-0008); the index lists every kind with its total
+ * that cannot be covered names what is short (D-0008); a part the building can make is made
+ * first, for every craft of a shift-click, never from a locked recipe under doLimitedCrafting
+ * (D-0012); the index lists every kind with its total
  * under its heading, a click on it behaves like a chest slot for the owner and the trusted and
  * not for a stranger, and the Insert slot sinks into the buffer (D-0009); an empty house furnished from chest items in the buffer; a two-floor stone house with seven containers (four below, two above,
  * one double) and mixed loot gets every stack into a container of its group, every item kept,
@@ -532,6 +534,125 @@ public final class WarehouseGameTests {
             menu.handlePlacement(true, stick, player);
             h.assertTrue(planksIn(menu) == 16 && chestAt(h, chestPos).isEmpty(), "a shift-click piles the rest on: " + planksIn(menu) + " in the grid, chest empty " + chestAt(h, chestPos).isEmpty());
             h.assertTrue(menu.getSlot(0).getItem().is(Items.STICK), "the result slot shows sticks");
+            h.succeed();
+        });
+    }
+    /** effects: the count of the item across the grid's nine cells. */
+    private static int inGrid(CraftingMenu menu, Item item) {
+        int n = 0;
+        for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(item)) n += menu.getSlot(i).getItem().getCount();
+        return n;
+    }
+    /** effects: the count of the item across the player's main inventory. */
+    private static int carried(ServerPlayer player, Item item) {
+        int n = 0;
+        for (var s : player.getInventory().items) if (s.is(item)) n += s.getCount();
+        return n;
+    }
+    private static net.minecraft.world.item.crafting.RecipeHolder<?> recipe(GameTestHelper h, String path) {
+        return h.getLevel().getServer().getRecipeManager().byKey(ResourceLocation.withDefaultNamespace(path)).orElseThrow();
+    }
+    /** D-0012: a torch at a managed table with one oak log and one coal in the chest and no stick
+     * anywhere: the click makes four planks from the log and four sticks from two of them, then
+     * fills the grid with the coal and a stick; the other planks and sticks stay with the player,
+     * the chest is empty, the crafting stats and the recipe book record the two sub-crafts, and the
+     * chat line names what was made. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void aFillMakesTheSubPartsFromTheChests(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.OAK_LOG, 1, Items.COAL, 1);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(15, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var torch = recipe(h, "torch");
+            player.awardRecipes(List.of(torch));
+            h.assertTrue(!player.getRecipeBook().contains(recipe(h, "stick")) && !player.getRecipeBook().contains(recipe(h, "oak_planks")), "a fresh player has unlocked neither sticks nor planks");
+            menu.handlePlacement(false, torch, player);
+            h.assertTrue(inGrid(menu, Items.COAL) == 1 && inGrid(menu, Items.STICK) == 1, "the grid holds the coal and a stick: coal " + inGrid(menu, Items.COAL) + " stick " + inGrid(menu, Items.STICK));
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.TORCH), "the result slot shows torches");
+            h.assertTrue(carried(player, Items.OAK_PLANKS) == 2 && carried(player, Items.STICK) == 3, "two planks and three sticks left with the player: planks " + carried(player, Items.OAK_PLANKS) + " sticks " + carried(player, Items.STICK));
+            h.assertTrue(chestAt(h, chestPos).isEmpty(), "the log and the coal came out of the chest");
+            h.assertTrue(player.getRecipeBook().contains(recipe(h, "stick")) && player.getRecipeBook().contains(recipe(h, "oak_planks")), "the sub-crafts unlocked their recipes");
+            h.assertTrue(player.getStats().getValue(net.minecraft.stats.Stats.ITEM_CRAFTED.get(Items.OAK_PLANKS)) == 4 && player.getStats().getValue(net.minecraft.stats.Stats.ITEM_CRAFTED.get(Items.STICK)) == 4,
+                    "the crafting stats count the planks and sticks made: " + player.getStats().getValue(net.minecraft.stats.Stats.ITEM_CRAFTED.get(Items.OAK_PLANKS)) + " " + player.getStats().getValue(net.minecraft.stats.Stats.ITEM_CRAFTED.get(Items.STICK)));
+            var rules = Pooled.rules(h.getLevel().getServer().getRecipeManager(), h.getLevel().registryAccess());
+            var planks = rules.making("minecraft:oak_planks").stream().filter(r -> r.id().equals("minecraft:oak_planks")).findFirst().orElseThrow();
+            var sticks = rules.making("minecraft:stick").stream().filter(r -> r.id().equals("minecraft:stick")).findFirst().orElseThrow();
+            var text = Pooled.madeMessage(new ItemStack(Items.TORCH), List.of(new Expansion.Step(planks, 1, List.of("minecraft:oak_log")), new Expansion.Step(sticks, 1, List.of("minecraft:oak_planks", "minecraft:oak_planks")))).getString();
+            h.assertTrue(text.contains("Made 4 × Oak Planks, 4 × Stick for Torch"), "the chat line names what was made: " + text);
+            h.succeed();
+        });
+    }
+    /** D-0012: a shift-click makes parts for every craft it places: three coal and two logs in
+     * the chest give three torches' worth in the grid, one plank craft and one stick craft made,
+     * one log left in the chest and the spare planks and stick with the player. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void aShiftClickMakesPartsForEveryCraft(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.COAL, 3, Items.OAK_LOG, 2);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(16, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var torch = recipe(h, "torch");
+            player.awardRecipes(List.of(torch));
+            menu.handlePlacement(true, torch, player);
+            h.assertTrue(inGrid(menu, Items.COAL) == 3 && inGrid(menu, Items.STICK) == 3, "three crafts in the grid: coal " + inGrid(menu, Items.COAL) + " stick " + inGrid(menu, Items.STICK));
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.TORCH), "the result slot shows torches");
+            h.assertTrue(carried(player, Items.OAK_PLANKS) == 2 && carried(player, Items.STICK) == 1, "one log's planks less two, four sticks less three: planks " + carried(player, Items.OAK_PLANKS) + " sticks " + carried(player, Items.STICK));
+            int logs = 0, coal = 0;
+            for (int i = 0; i < chestAt(h, chestPos).getContainerSize(); i++) { var s = chestAt(h, chestPos).getItem(i); if (s.is(Items.OAK_LOG)) logs += s.getCount(); if (s.is(Items.COAL)) coal += s.getCount(); }
+            h.assertTrue(logs == 1 && coal == 0, "one log left in the chest and no coal: logs " + logs + " coal " + coal);
+            h.succeed();
+        });
+    }
+    /** D-0012 under doLimitedCrafting (D-0007): a sub-craft whose recipe the player has not
+     * unlocked is not made. Sticks unlocked, planks not: the torch is short of a stick and nothing
+     * is drawn; planks unlocked too: made. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void lockedSubRecipesAreNotMadeUnderLimitedCrafting(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.OAK_LOG, 1, Items.COAL, 1);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var rules = h.getLevel().getGameRules();
+            try {
+                rules.getRule(net.minecraft.world.level.GameRules.RULE_LIMITED_CRAFTING).set(true, h.getLevel().getServer());
+                var player = mock(h, table);
+                var menu = new CraftingMenu(17, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+                player.containerMenu = menu;
+                var torch = recipe(h, "torch");
+                player.awardRecipes(List.of(torch, recipe(h, "stick")));
+                menu.handlePlacement(false, torch, player);
+                int placed = 0;
+                for (int i = 1; i <= 9; i++) placed += menu.getSlot(i).getItem().getCount();
+                h.assertTrue(placed == 0 && carried(player, Items.OAK_PLANKS) == 0 && carried(player, Items.STICK) == 0, "with the planks recipe locked nothing is made or placed: grid " + placed + " planks " + carried(player, Items.OAK_PLANKS) + " sticks " + carried(player, Items.STICK));
+                h.assertTrue(chestAt(h, chestPos).getItem(0).is(Items.OAK_LOG) && chestAt(h, chestPos).getItem(1).is(Items.COAL), "and the chest is untouched");
+                player.awardRecipes(List.of(recipe(h, "oak_planks")));
+                menu.handlePlacement(false, torch, player);
+                h.assertTrue(inGrid(menu, Items.COAL) == 1 && inGrid(menu, Items.STICK) == 1, "with the planks recipe unlocked the parts are made and the grid filled: coal " + inGrid(menu, Items.COAL) + " stick " + inGrid(menu, Items.STICK));
+                h.assertTrue(chestAt(h, chestPos).isEmpty(), "the log and the coal came out of the chest");
+            } finally {
+                rules.getRule(net.minecraft.world.level.GameRules.RULE_LIMITED_CRAFTING).set(false, h.getLevel().getServer());
+            }
             h.succeed();
         });
     }

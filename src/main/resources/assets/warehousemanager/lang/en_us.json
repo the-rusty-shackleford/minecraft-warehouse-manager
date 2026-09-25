@@ -15,6 +15,7 @@
   "warehousemanager.index.nomatch": "Nothing matches.",
   "warehousemanager.pooled.short": "Can't fill %s from here: short of %s.",
   "warehousemanager.pooled.short.item": "%s × %s",
+  "warehousemanager.pooled.made": "Made %s for %s.",
   "warehousemanager.claimed": "This warehouse is now yours. Open it to choose who else may use it.",
   "warehousemanager.refuse.open": "%s's warehouse. You're not on the trusted list.",
   "warehousemanager.refuse.break": "%s's warehouse. Only trusted players can break that.",

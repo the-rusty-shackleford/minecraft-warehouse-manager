@@ -101,6 +101,27 @@ stay with you.
 Tables outside the building's walls, and the inventory's own 2x2 grid, are unaffected. As
 always, the book shows only recipes you have unlocked; the warehouse does not unlock them.
 
+**Parts the building could make count too.** A recipe whose ingredient is in no chest but could
+be crafted at the table from what the chests hold lights up as craftable, however many steps
+down that goes: a rifle from its receivers, the receivers from steel, the steel from iron and
+coal, the stock from planks and a stick, the planks from a log. Click it and the manager makes
+those parts first, in order, into your inventory (each is a real craft: it counts in your
+statistics, fires the crafting event and unlocks its recipe as crafting by hand would), then
+fills the grid as usual. One gray chat line says what was made ("Made 9 × Steel Ingot, 1 × Upper
+Receiver, 1 × Lower Receiver, 1 × Barrel, 1 × Stock for Rifle."); what a step made beyond the
+need stays with you. A shift-click makes parts for every craft it places. The rules: crafting-table
+recipes only (a furnace's output has to be in a chest already; the book never lights what the
+click cannot finish); shaped and shapeless recipes with ordinary ingredients make parts (a mod's
+own recipe class can be the recipe you click, not a part the fill makes); each cell of the recipe
+is filled with one kind for all the crafts of a click, as the vanilla book does; where an item has
+several recipes, the one with the smallest yield that works is used (three steel come from iron
+and coal before a block is broken into nine), and a part is never made by way of itself (no nugget
+from an ingot to make the ingot); the choice is made once, in the recipe's order, and never
+revisited, so a fill that could only succeed by a cleverer split of the same materials is reported
+short instead; the parts need room in your inventory. A recipe you have not unlocked is used for a
+part exactly as for the recipe you click (unlocked by the fill, or refused under
+`doLimitedCrafting`).
+
 With **EMI** installed, EMI takes over the recipe book button (its default setting turns it
 into EMI's own "craftables" toggle). Warehouse Manager registers an EMI handler for the
 crafting table, so EMI's craftables view and its fill buttons count the building's chests
@@ -212,6 +233,18 @@ their mod uses the common tags or the usual naming.
 - A recipe that shows as craftable but does not fill when clicked, on a world with
   `doLimitedCrafting` on: the game refuses recipes you have not unlocked, and the pooled fill
   respects that. Craft it by hand once. (Elsewhere the fill unlocks it for you since 0.3.1.)
+- Parts appeared in your inventory when you clicked a recipe: the fill made them (since 0.5.0);
+  the chat line names them, and the server log has one line per part made, "pooled step
+  <recipe>: made N craft(s) (M × <item>) from {…}", between the fill's "N craft(s) wanted, M
+  makeable at most, S step(s) planned in T ms" line and its "drew {…}" line. A recipe that lights
+  up but ghosts red with "short of" after the parts were made means a step could not be
+  finished: the log says why ("ran out", "the recipe refuses the picks", or the inventory was
+  full and a part was dropped at your feet). "not craftable … nor makeable" in the log with the
+  chat's "short of" is the honest answer: nothing in the chests, by any recipe, covers that part.
+- The vanilla book lights a recipe EMI's craftables do not, or the other way round: the two count
+  the same tally through the same rule book; EMI's list is built from what is on hand or makeable,
+  the vanilla book from the recipes you have unlocked. The server log's "pooled rule book: N rules
+  from M crafting recipes" line says how many recipes qualify as ways to make a part.
 - A recipe book or EMI that shows nothing craftable from the chests, with no refusal shown,
   means the same: the tally is only sent to the owner and their trusted players. The server
   log line "<player> opened a table in the building at <manager>: sending N kinds" appears
@@ -226,17 +259,23 @@ their mod uses the common tags or the usual naming.
 ## Building
 
 Java 21. `./gradlew test` runs the JDK-only domain tests (classifier, planner, flood fill, sign
-layout, taxonomy, pooling, access tiers). `./gradlew runGameTestServer` runs the real-server
-GameTests (a two-floor house with seven containers gets sorted and labelled, an outside chest
-is untouched, the buffer routes, an existing sign is rewritten, a double chest gets two signs,
-breaking spills, crafting draws from the chests; the owner and a trusted player draw and open
-while a stranger is refused, a second manager is refused through a hole in the wall, explosions
-leave held chests standing, claims outlive the manager's unloading). `./gradlew runPhotoBooth`
-opens a client on the booth world for a visual check of the signs, the recipe book, EMI, the
-trust panel and a refusal. `./gradlew build` produces `build/libs/warehousemanager-<version>.jar`.
+layout, taxonomy, pooling, the expansion of a recipe into the parts the building can make, access
+tiers). `./gradlew runGameTestServer` runs the real-server GameTests (a two-floor house with seven
+containers gets sorted and labelled, an outside chest is untouched, the buffer routes, an existing
+sign is rewritten, a double chest gets two signs, breaking spills, crafting draws from the chests
+and makes the parts it can; the owner and a trusted player draw and open while a stranger is
+refused, a second manager is refused through a hole in the wall, explosions leave held chests
+standing, claims outlive the manager's unloading). `./gradlew runPhotoBooth` opens a client on
+the booth world for a visual check of the signs, the recipe book, EMI, the parts made for a torch
+and for a rifle, the trust panel and a refusal. `./gradlew build` produces
+`build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
+**0.5.0**: a part the building could make at the table counts as available, all the way down (a
+rifle from receivers from steel from iron and coal), in the vanilla book and in EMI, and a click
+makes the parts into your inventory before filling the grid, with a chat line naming them.
+Carries 0.4.1, which was never released on its own.
 **0.4.0**: the manager's screen is the warehouse's index: every kind under its heading with its
 total, a search box, chest-slot taking, one Insert slot in place of the six-row chest.
 **0.4.1**: a shaped recipe with gaps in its pattern (a bucket, a bow, a hoe, a gun receiver)
@@ -263,5 +302,5 @@ which could put "Food 1/2" and "Food 2/2" at opposite ends of a building); an em
 is furnished from chest items dropped into the manager; each container keeps only its own
 signs (stacked chests had shared one). Download from
 [GitHub Releases](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases).
-Verified: 61 JUnit tests, 19 real-server GameTests and the photo booth; see
+Verified: 80 JUnit tests, 25 real-server GameTests and the photo booth; see
 [release verification](devtools/verification/).

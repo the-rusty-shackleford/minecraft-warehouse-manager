@@ -2,6 +2,7 @@
 package com.chunkworks.warehousemanager.mixin.client;
 
 import com.chunkworks.warehousemanager.Pooled;
+import com.chunkworks.warehousemanager.client.Craftables;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.world.entity.player.StackedContents;
@@ -31,6 +32,8 @@ abstract class RecipeBookComponentMixin {
         player.getInventory().fillStackedContents(stackedContents);
         menu.fillCraftSlotsStackedContents(stackedContents);
         Pooled.Tally.account(player.containerMenu.containerId, stackedContents);
+        // What the building could make in steps, for the collections this pass asks (D-0012).
+        Craftables.begin(player.containerMenu.containerId, stackedContents);
     }
     @Inject(method = "tick", at = @At("HEAD"))
     private void warehousemanager$refresh(CallbackInfo ci) {

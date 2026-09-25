@@ -53,7 +53,9 @@ public final class WarehouseBooth {
         var mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         if (mc.screen instanceof PauseScreen) mc.setScreen(null);
-        mc.getToasts().clear(); mc.gui.getChat().clearMessages(true);
+        mc.getToasts().clear();
+        // The chat is kept only around the recursive fills, whose "Made …" line the photos show.
+        if (!(tick + 1 >= 774 && tick + 1 <= 786) && !(tick + 1 >= 809 && tick + 1 <= 821)) mc.gui.getChat().clearMessages(true);
         try {
             switch (++tick) {
                 case 20 -> server(mc, p -> {
@@ -345,7 +347,117 @@ public final class WarehouseBooth {
                     photo(mc, "08e-emi-fill-receiver");
                     mc.player.closeContainer();
                 }
-                case 752 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // What the building could make in steps (D-0012): every plank and stick leaves the
+                // room and coal comes in, so a torch is two sub-crafts away (log, planks, stick).
+                // The vanilla book lights it, EMI lists it and fills it, the parts are made.
+                case 752 -> server(mc, p -> {
+                    p.getInventory().clearContent();
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                    int removed = 0;
+                    for (var u : m.units()) {
+                        var c = m.container(p.serverLevel(), u);
+                        for (int i = 0; i < c.getContainerSize(); i++) { var s = c.getItem(i); if (s.is(net.minecraft.tags.ItemTags.PLANKS) || s.is(Items.STICK)) { removed += s.getCount(); c.setItem(i, ItemStack.EMPTY); } }
+                    }
+                    LOG.info("warehousemanager booth: {} planks and sticks removed from the room", removed);
+                    stock(m, new ItemStack(Items.COAL, 4));
+                    p.getRecipeBook().setBookSetting(net.minecraft.world.inventory.RecipeBookType.CRAFTING, true, true);
+                    // The book lists unlocked recipes only: the torch, and the planks for the check below.
+                    p.awardRecipes(java.util.List.of(p.server.getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("torch")).orElseThrow(),
+                            p.server.getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("oak_planks")).orElseThrow()));
+                });
+                case 762 -> server(mc, p -> {
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                    check(m.buffer().isEmpty(), "the coal was routed into a chest");
+                    var tally = Pooled.tally(m);
+                    check(!tally.containsKey(Items.STICK) && !tally.containsKey(Items.OAK_PLANKS) && tally.getOrDefault(Items.COAL, 0) == 4 && tally.getOrDefault(Items.OAK_LOG, 0) > 0, "the room holds coal and logs and no planks or sticks: " + tally);
+                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting")));
+                });
+                case 770 -> {
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "crafting table screen open with nothing in hand");
+                    var torch = mc.player.getRecipeBook().getCollections().stream().filter(c -> c.getRecipes().stream().anyMatch(r -> r.id().getPath().equals("torch"))).findFirst().orElseThrow();
+                    check(torch.hasCraftable(), "the vanilla book lights the torch with only logs and coal in the room: " + Pooled.Tally.describe());
+                    var planks = mc.player.getRecipeBook().getCollections().stream().filter(c -> c.getRecipes().stream().anyMatch(r -> r.id().getPath().equals("oak_planks"))).findFirst().orElseThrow();
+                    check(planks.hasCraftable(), "and the planks, straight from the logs");
+                    photo(mc, "12-book-recursive");
+                }
+                case 775 -> {
+                    var recipe = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("torch"));
+                    check(recipe != null, "EMI knows the torch");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    var inventory = dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player);
+                    check(inventory instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.Expanded, "EMI's inventory over the managed table is the expanded one: " + inventory.getClass().getName());
+                    long t0 = System.nanoTime();
+                    var reachable = ((com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.Expanded) inventory).craftables().reachable();
+                    long t1 = System.nanoTime();
+                    boolean can = inventory.canCraft(recipe);
+                    long t2 = System.nanoTime();
+                    var craftables = inventory.getCraftables();
+                    long t3 = System.nanoTime();
+                    LOG.info("warehousemanager booth: reachable {} items in {} ms, canCraft(torch) in {} ms, {} craftables in {} ms", reachable.size(), (t1 - t0) / 1_000_000.0, (t2 - t1) / 1_000_000.0, craftables.size(), (t3 - t2) / 1_000_000.0);
+                    check(can, "EMI counts the torch craftable through two sub-crafts: " + Pooled.Tally.describe());
+                    check(craftables.stream().anyMatch(c -> c.getEmiStacks().stream().anyMatch(s -> s.getKey() == Items.TORCH)), "EMI's craftables list the torch, whose inputs are nowhere in the room");
+                    check(inventory.getCraftAvailability(recipe).stream().allMatch(b -> b), "no input of the torch shows missing");
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the torch is accepted");
+                }
+                case 780 -> {
+                    int coal = 0, sticks = 0, planks = 0, loose = 0;
+                    for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+                    for (var s : mc.player.getInventory().items) { if (s.is(Items.STICK)) loose += s.getCount(); if (s.is(Items.OAK_PLANKS)) planks += s.getCount(); }
+                    check(coal == 1 && sticks == 1, "the grid holds the coal and a made stick: coal " + coal + " sticks " + sticks);
+                    check(loose == 3 && planks == 2, "three sticks and two planks left with the player: sticks " + loose + " planks " + planks);
+                    photo(mc, "13-emi-fill-recursive");
+                }
+                case 786 -> mc.player.closeContainer();
+                // The rifle itself, four levels deep from iron, coal, redstone, planks and a stick,
+                // with the pack's Ranged Weapons Mod and Metals and Materials jars in run/booth/mods.
+                case 790 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) { LOG.info("warehousemanager booth: Ranged Weapons Mod not in run/booth/mods, the rifle steps are skipped"); break; }
+                    server(mc, p -> { p.getInventory().clearContent();
+                        var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                        // The receiver steps left steel in the room; out it goes, so the steel is made too.
+                        var steel = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("metalsandmaterials:steel_ingot"));
+                        for (var u : m.units()) { var c = m.container(p.serverLevel(), u); for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(steel)) c.setItem(i, ItemStack.EMPTY); }
+                        stock(m, new ItemStack(Items.IRON_INGOT, 12), new ItemStack(Items.COAL, 3), new ItemStack(Items.OAK_PLANKS, 3), new ItemStack(Items.STICK, 1)); });
+                }
+                case 800 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) break;
+                    server(mc, p -> {
+                        var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                        check(m.buffer().isEmpty(), "the rifle's materials were routed into chests");
+                        var tally = Pooled.tally(m);
+                        check(tally.keySet().stream().noneMatch(i -> net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(i).getPath().equals("steel_ingot")) && tally.getOrDefault(Items.IRON_INGOT, 0) >= 12 && tally.getOrDefault(Items.COAL, 0) >= 3,
+                                "no steel in the room, iron and coal enough for three steel crafts and a barrel: " + tally);
+                        LOG.info("warehousemanager booth: the room before the rifle: {}", tally);
+                        p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting")));
+                    });
+                }
+                case 810 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) break;
+                    var rifle = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.parse("rangedweaponsmod:rifle"));
+                    check(rifle != null, "EMI knows the rifle");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    var inventory = dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player);
+                    long t0 = System.nanoTime();
+                    boolean can = inventory.canCraft(rifle);
+                    long t1 = System.nanoTime();
+                    var craftables = inventory.getCraftables();
+                    long t2 = System.nanoTime();
+                    LOG.info("warehousemanager booth: canCraft(rifle) in {} ms, {} craftables in {} ms", (t1 - t0) / 1_000_000.0, craftables.size(), (t2 - t1) / 1_000_000.0);
+                    check(can, "EMI counts the rifle craftable from iron, coal, redstone, planks and a stick: " + Pooled.Tally.describe());
+                    var rifleItem = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("rangedweaponsmod:rifle"));
+                    check(craftables.stream().anyMatch(c -> c.getEmiStacks().stream().anyMatch(s -> s.getKey() == rifleItem)), "EMI's craftables list the rifle");
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(rifle, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the rifle is accepted");
+                }
+                case 816 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) break;
+                    var parts = new java.util.HashMap<String, Integer>();
+                    for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (!s.isEmpty()) parts.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).getPath(), s.getCount(), Integer::sum); }
+                    check(parts.equals(java.util.Map.of("upper_receiver", 1, "lower_receiver", 1, "barrel", 1, "stock", 1)), "the grid holds the four made parts: " + parts);
+                    check(mc.player.containerMenu.getSlot(0).getItem().getItem() == net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("rangedweaponsmod:rifle")), "the result slot shows the rifle");
+                    photo(mc, "14-emi-fill-rifle");
+                }
+                case 821 -> { if (net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) mc.player.closeContainer(); }
+                case 830 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }
@@ -391,6 +503,15 @@ public final class WarehouseBooth {
         l.setBlock(new BlockPos(15, 104, 2), Blocks.GLOWSTONE.defaultBlockState(), 3);
         l.setBlock(HUT_MANAGER, WarehouseManager.BLOCK.get().defaultBlockState(), 3);
         ((ManagerBlockEntity) l.getBlockEntity(HUT_MANAGER)).buffer().setItem(0, new ItemStack(Items.CHEST, 6));
+    }
+    /** effects: puts the stacks into the manager's buffer, whence it routes them into the chests. */
+    private static void stock(ManagerBlockEntity m, ItemStack... stacks) {
+        int next = 0;
+        for (var stack : stacks) {
+            while (next < m.buffer().getContainerSize() && !m.buffer().getItem(next).isEmpty()) next++;
+            if (next >= m.buffer().getContainerSize()) throw new IllegalStateException("buffer full");
+            m.buffer().setItem(next, stack);
+        }
     }
     /** effects: drops every player-data file but the booth player's own: the booth world is a copy
      * of the GameTest world and carries its mock players, whom no cache can name. */

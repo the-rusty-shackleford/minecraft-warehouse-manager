@@ -1,6 +1,24 @@
 # Warehouse Manager
 
-Version 0.4.1, built 2026-09-25. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.5.0, built 2026-09-25. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+0.5.0 (2026-09-25): Rusty asked that a rifle whose receivers are themselves craftable from what
+the building holds show as craftable, and that the fill make the sub-parts. Their three calls,
+asked before the design: the full tree, crafting-table recipes only, the fill makes the parts
+(D-0012). The pure `domain.Expansion` plans a recipe's cells over what is on hand and the rule
+book (greedy, one kind per cell for all the crafts of a click as vanilla places them, a cycle
+guard, rules by yield ascending, a rule backed out before the next, surplus kept), with `most`
+by bisection and a count-free `reachable` pre-pass; 16 JUnit. `Pooled.pull` plans one craft,
+then vanilla's count, then makes the steps (draw, take, lay out in the pattern, `matches`,
+`assemble`, stat, event, trigger, award, give) before the 0.4.1 path; one log line per step and
+a gray chat line naming what was made. The vanilla book gets it through `Craftables` and a mixin
+on `RecipeCollection.canCraft`; EMI through `Expanded`, a subclass of its inventory that also
+gathers candidates by the reachable items. Three GameTests (a torch from a log and a coal, a
+shift-click for three, a locked planks recipe under doLimitedCrafting) and three booth steps
+(the vanilla book, EMI's list and fill, the rifle from iron and coal with the gun jars), 78
+checks; 80 JUnit, 25 GameTests. Carries 0.4.1, never released on its own. Committed, not
+tagged; waits on Rusty's go for pack 1.64.0 in place of 0.4.1
+([record](../devtools/verification/release-0.5.0.md)).
 
 0.4.1 (2026-09-25, early): Rusty's receiver ("steel in hand, redstone in the chests, flashed
 red all around") was not a mixed-source failure: the two reproductions of that (a GameTest with
@@ -52,18 +70,20 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
 
 - `src/domain` is JDK-only: `Taxonomy` (the group tree), `Classifier` (ordered rules over
   `ItemFacts`), `Planner` (groups to containers), `FloodFill` (incremental, budgeted, sky-aware),
-  `SignText` (layout), `Pooling` (what a recipe click draws), `Access` (owner, trusted,
-  stranger; which actions each tier gets). 46 JUnit tests with partitions at the top of each file.
+  `SignText` (layout), `Pooling` (what a recipe click draws), `Expansion` (what the table can
+  make in steps: rules, plans, the most, the reachable), `Access` (owner, trusted, stranger; which
+  actions each tier gets). 80 JUnit tests with partitions at the top of each file.
 - `src/main` adapts: `Facts` (stack to facts, cached per item), `ManagerBlockEntity` (scan,
   plan, sort, label, buffer, status, ownership and roster, the synchronous placement walk),
   `ManagerBlock` (placement refusal, placer owns, claim by sneak-click), `Signs`, `Transfer`,
   `Managers` (loaded managers, wake-ups, claiming through `Claims`), `Claims` (saved data:
   container to manager), `Guard` (the refusals through NeoForge events and the blast
   protection), `ManagerMenu` and `Roster` (the trust panel's menu and wire), `Config`
-  (`operators_bypass`), `Pooled` (crafting from the chests), the EMI plugin, three mixins
-  (recipe placement, the crafting table's position, container validity for trust withdrawal),
-  and `client/ManagerScreen`.
-- `src/gametest`: fourteen real-server GameTests on a two-floor house, plus the photo booth.
+  (`operators_bypass`), `Pooled` (crafting from the chests, the rule book, the steps), the EMI
+  plugin (the handler and `Expanded`), five mixins (recipe placement, the crafting table's
+  position, container validity for trust withdrawal, the recipe book's tally, the collection's
+  craftable set), `client/Craftables` and `client/ManagerScreen`.
+- `src/gametest`: twenty-five real-server GameTests on a two-floor house, plus the photo booth.
 
 ## 0.2.0 (was 0.1.1)
 
