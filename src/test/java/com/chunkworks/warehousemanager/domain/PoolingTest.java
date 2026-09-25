@@ -11,7 +11,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * crafts, nothing taken); an item used twice per craft; an empty recipe; negative wanted.
  * Shortfall: covered; one ingredient short by one and by several; an ingredient with
  * alternatives covered across them and short across them; two ingredients sharing an item
- * (the later one is short); an empty recipe; an empty option list; bad counts. */
+ * (the later one is short); an empty recipe; an empty option list; bad counts. Wanted: a first
+ * click; a click with the grid holding the recipe (one more), at the stack cap (no more); a
+ * shift-click (the most), capped by the stack, with nothing craftable; bad counts. */
 final class PoolingTest {
     private static final List<String> STICK = List.of("minecraft:oak_planks", "minecraft:oak_planks");
     private static final List<String> COALS = List.of("minecraft:coal", "minecraft:charcoal");
@@ -69,5 +71,22 @@ final class PoolingTest {
         assertEquals(new Pooling.Pull(Map.of(), 0), Pooling.pull(List.of(), 5, Map.of(), Map.of()));
         assertThrows(IllegalArgumentException.class, () -> Pooling.pull(STICK, -1, Map.of(), Map.of()));
         assertThrows(UnsupportedOperationException.class, () -> Pooling.pull(STICK, 1, Map.of(), Map.of("minecraft:oak_planks", 2)).take().clear());
+    }
+    @Test void aClickAsksForOneCraftAndAClickOnAHeldRecipeForOneMore() {
+        assertEquals(1, Pooling.wanted(false, false, 0, 8, 64), "a fresh grid");
+        assertEquals(2, Pooling.wanted(false, true, 1, 8, 64), "the grid holds one per stack");
+        assertEquals(8, Pooling.wanted(false, true, 7, 8, 64));
+        assertEquals(64, Pooling.wanted(false, true, 64, 99, 64), "at the stack cap nothing more is asked");
+        assertEquals(16, Pooling.wanted(false, true, 16, 99, 16), "a cap of sixteen, as for eggs or snowballs");
+    }
+    @Test void aShiftClickAsksForTheMostTheStackAllows() {
+        assertEquals(8, Pooling.wanted(true, false, 0, 8, 64));
+        assertEquals(64, Pooling.wanted(true, true, 3, 99, 64), "capped by the stack");
+        assertEquals(0, Pooling.wanted(true, false, 0, 0, 64), "nothing craftable asks for nothing");
+    }
+    @Test void wantedRefusesBadCounts() {
+        assertThrows(IllegalArgumentException.class, () -> Pooling.wanted(false, true, -1, 1, 64));
+        assertThrows(IllegalArgumentException.class, () -> Pooling.wanted(true, false, 0, -1, 64));
+        assertThrows(IllegalArgumentException.class, () -> Pooling.wanted(false, false, 0, 1, -1));
     }
 }

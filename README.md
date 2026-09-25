@@ -93,7 +93,11 @@ warehouse light up alongside those you could make from your pockets. Click one a
 manager draws the shortfall out of the chests into your inventory, exactly what that click
 needs (one craft, or as many as the building and you together allow for a shift-click),
 before the grid fills as usual; crafting then consumes it, so the chests are debited by
-what you made. Close the table without crafting and the drawn ingredients stay with you.
+what you made. Click the same recipe again while the grid still holds it and one more craft
+is drawn and piled onto each stack, as the vanilla book does from your pockets: eight clicks
+on a recipe that makes eight bullets a craft leave sixty-four bullets' worth in the grid for
+one shift-click on the result. Close the table without crafting and the drawn ingredients
+stay with you.
 Tables outside the building's walls, and the inventory's own 2x2 grid, are unaffected. As
 always, the book shows only recipes you have unlocked; the warehouse does not unlock them.
 
@@ -201,7 +205,10 @@ their mod uses the common tags or the usual naming.
 - A clicked recipe prefills with every slot red: the game's ghost recipe, meaning some part is
   missing from your inventory and the chests together; since 0.3.2 the chat line above it names
   the part and how many. An ingredient that accepts several items is named by the first (Coal
-  for coal or charcoal).
+  for coal or charcoal). Since 0.4.1 the server log has one line per click, "pooled fill of
+  <recipe> for <player>: N craft(s) wanted, drew {…}" or the reason nothing was drawn; a ghost
+  with no chat line and "drew {}" in that line is the bug 0.4.1 fixed (a shaped recipe with
+  gaps in its pattern never drew from the chests) or a new one of its kind.
 - A recipe that shows as craftable but does not fill when clicked, on a world with
   `doLimitedCrafting` on: the game refuses recipes you have not unlocked, and the pooled fill
   respects that. Craft it by hand once. (Elsewhere the fill unlocks it for you since 0.3.1.)
@@ -232,6 +239,12 @@ trust panel and a refusal. `./gradlew build` produces `build/libs/warehousemanag
 
 **0.4.0**: the manager's screen is the warehouse's index: every kind under its heading with its
 total, a search box, chest-slot taking, one Insert slot in place of the six-row chest.
+**0.4.1**: a shaped recipe with gaps in its pattern (a bucket, a bow, a hoe, a gun receiver)
+draws from the chests; before, the fill read the game's answer for an empty cell, air, as an
+ingredient nobody holds and drew nothing, so such recipes ghosted red unless your inventory
+alone covered them. Clicking a recipe again while the grid holds it draws one more craft and
+piles the stacks up, as the vanilla book does. The Insert slot's stack is counted in the index
+at once. One server log line per fill says what was drawn or why not.
 **0.3.2**: when a recipe cannot be filled from your inventory and the chests together, a chat
 line says what is short ("Can't fill Engine from here: short of 1 × Boiler.") before the game's
 ghost recipe, whose slots are all red whichever part is missing.

@@ -108,7 +108,10 @@ public final class Pooled {
      * for a table outside any managed building. */
     public static void pull(ServerPlayer player, CraftingMenu menu, RecipeHolder<?> holder, boolean placeAll) {
         var m = managerFor(menu);
-        if (m == null || !m.permits(player, Access.Action.DRAW) || !(holder.value() instanceof CraftingRecipe recipe)) return;
+        if (m == null || !m.permits(player, Access.Action.DRAW) || !(holder.value() instanceof CraftingRecipe recipe)) {
+            LOG.info("pooled fill of {} for {}: not drawn ({})", holder.id(), player.getScoreboardName(), m == null ? "table not in a managed building" : holder.value() instanceof CraftingRecipe ? "player may not draw" : "not a crafting recipe");
+            return;
+        }
         // Vanilla's placement silently refuses a recipe the player has not unlocked, and many
         // modded recipes have no unlock advancement at all (Immersive Aircraft ships none: Rusty's
         // propeller never filled). EMI's own fill never asked, so the pooled fill must not either:
@@ -130,15 +133,33 @@ public final class Pooled {
         if (!all.canCraft(recipe, chosen)) {
             // Vanilla answers with a ghost recipe, every slot red; say what is short (D-0008).
             var short_ = shortage(recipe, held, pooledIds);
+            LOG.info("pooled fill of {} for {}: not craftable from inventory, grid and building; short of {}", holder.id(), player.getScoreboardName(), short_);
             if (!short_.isEmpty()) player.displayClientMessage(shortMessage(recipe.getResultItem(player.registryAccess()), short_), false);
             return;
         }
-        int wanted = placeAll ? Math.max(1, Math.min(all.getBiggestCraftableStack(holder, null), recipe.getResultItem(player.registryAccess()).getMaxStackSize())) : 1;
+        // Vanilla's count for the click: a shift-click the most, a click one craft, or one more
+        // than the grid already holds when it holds this recipe, so clicking again piles the grid
+        // up (Rusty's bullets, eight a craft, clicked eight times for a stack); never past the
+        // smallest stack the chosen items make.
+        // Vanilla answers one item per cell of the recipe's pattern, and for an empty cell that
+        // item is air: a shaped recipe with gaps (a bucket, Rusty's receiver) must not be read as
+        // needing air, which nobody holds, or nothing is drawn and vanilla answers with its ghost.
         var chosenIds = new ArrayList<String>();
-        for (int id : chosen) chosenIds.add(key(StackedContents.fromStackingIndex(id).getItem()));
+        int stackCap = Integer.MAX_VALUE;
+        for (int id : chosen) {
+            var item = StackedContents.fromStackingIndex(id);
+            if (item.isEmpty()) continue;
+            chosenIds.add(key(item.getItem())); stackCap = Math.min(stackCap, item.getMaxStackSize());
+        }
+        @SuppressWarnings("unchecked") boolean gridHolds = menu.recipeMatches((RecipeHolder<CraftingRecipe>) holder);
+        int inGrid = Integer.MAX_VALUE;
+        for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty()) inGrid = Math.min(inGrid, s.getCount()); }
+        if (inGrid == Integer.MAX_VALUE) inGrid = 0;
+        int wanted = Pooling.wanted(placeAll, gridHolds, inGrid, all.getBiggestCraftableStack(holder, null), stackCap);
         var pull = Pooling.pull(chosenIds, wanted, held, pooledIds);
         boolean drew = false;
         for (var e : pull.take().entrySet()) drew |= draw(player, m, e.getKey(), e.getValue());
+        LOG.info("pooled fill of {} for {}: {} craft(s) wanted, drew {} ({})", holder.id(), player.getScoreboardName(), wanted, pull.take(), drew ? "moved" : "nothing moved");
         if (drew) send(player, menu);
     }
     /** effects: item counts over the player's inventory and the grid. */

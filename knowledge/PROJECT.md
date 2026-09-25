@@ -1,6 +1,21 @@
 # Warehouse Manager
 
-Version 0.4.0, built 2026-09-24. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.4.1, built 2026-09-25. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+0.4.1 (2026-09-25, early): Rusty's receiver ("steel in hand, redstone in the chests, flashed
+red all around") was not a mixed-source failure: the two reproductions of that (a GameTest with
+a tag ingredient on either side, an EMI booth step) passed, and the receiver itself failed in
+the booth with the pack's jar. Vanilla's craftability check answers air for the empty cells of
+a shaped pattern, and the fill counted air as an ingredient nobody holds (D-0011): no shaped
+recipe with a gap ever drew from the chests since D-0004. Fixed by skipping them; pinned by a
+bucket GameTest and a bucket booth step through EMI, plus the receiver in the booth when the
+Ranged Weapons Mod and Metals and Materials jars stand in `run/booth/mods`. Also D-0010:
+clicking a recipe again piles the grid up, vanilla's own `getStackSize` rule as the pure
+`Pooling.wanted` (Rusty's bullets); the Insert slot's sink sends a fresh index at once (the
+booth's index step had raced the one-second refresh); one INFO line per fill. 64 JUnit, 22
+GameTests, the booth with EMI (57 checks); jar sha1 `959eeb41ef634a18220a27d47b539f4401623896`
+(171271 bytes); [record](../devtools/verification/release-0.4.1.md). Committed, not tagged;
+waits on Rusty's go for pack 1.64.0.
 
 0.4.0 (2026-09-24, late): the manager's screen is the warehouse's index (D-0009): every kind
 the building holds under its taxonomy heading with its total, a search box (name, group,

@@ -196,6 +196,27 @@ public final class WarehouseBooth {
                     photo(mc, "08-emi-fill-from-chests");
                     mc.player.closeContainer();
                 }
+                // Rusty's receiver (2026-09-24): one ingredient in hand, the other only in the chests,
+                // flashed red in EMI and did not fill. Sticks in hand, redstone in the chests, a
+                // redstone torch through EMI's own fill.
+                case 535 -> server(mc, p -> { p.getInventory().clearContent(); p.getInventory().setItem(0, new ItemStack(Items.STICK, 4));
+                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))); });
+                case 540 -> {
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "crafting table screen open with sticks in hand");
+                    var recipe = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("redstone_torch"));
+                    check(recipe != null, "EMI knows the redstone torch");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    var inventory = dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player);
+                    check(inventory.canCraft(recipe), "EMI counts the sticks in hand and the chests' redstone together: " + Pooled.Tally.describe());
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill is accepted with the ingredients split between hand and chests");
+                }
+                case 543 -> {
+                    int redstone = 0, sticks = 0;
+                    for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (s.is(Items.REDSTONE)) redstone += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+                    check(redstone == 1 && sticks == 1, "the redstone came from the chests and the stick from the hand: redstone " + redstone + " sticks " + sticks);
+                    photo(mc, "08b-emi-fill-hand-and-chests");
+                    mc.player.closeContainer();
+                }
                 // Ownership (D-0006): the booth player claims the room's manager, two players this
                 // world has seen appear in the trust panel, a click trusts one; then nfx's hut
                 // refuses the booth player at the manager and at a chest, on the action bar.
@@ -239,7 +260,92 @@ public final class WarehouseBooth {
                     var result = p.gameMode.useItemOn(p, p.serverLevel(), ItemStack.EMPTY, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(chest), Direction.UP, chest, false));
                     check(p.containerMenu == p.inventoryMenu, "a stranger is refused at nfx's chest: " + result);
                 });
-                case 670 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // Rusty's receiver (2026-09-24) again, closer to the report: the same item split
+                // between hand and chests (five iron in hand, the chests' five, a block of iron
+                // needs nine), then the real recipe, three steel by tag and a redstone by tag, with
+                // the pack's Ranged Weapons Mod and Metals and Materials jars in run/booth/mods.
+                case 680 -> server(mc, p -> {
+                    p.teleportTo(p.serverLevel(), 0.5, 100, 2.2, 0, 15); p.getInventory().clearContent();
+                    p.getInventory().setItem(0, new ItemStack(Items.IRON_INGOT, 5));
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                    if (net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) {
+                        var steel = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("metalsandmaterials:steel_ingot"));
+                        check(steel != Items.AIR, "steel is registered");
+                        p.getInventory().setItem(1, new ItemStack(steel, 2));
+                        for (int i = 0; i < m.buffer().getContainerSize(); i++) if (m.buffer().getItem(i).isEmpty()) { m.buffer().setItem(i, new ItemStack(steel, 8)); break; }
+                    }
+                });
+                case 700 -> server(mc, p -> p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))));
+                case 710 -> {
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "crafting table screen open with five iron in hand");
+                    var block = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("iron_block"));
+                    check(block != null, "EMI knows the block of iron");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).canCraft(block), "EMI counts five iron in hand and the chests' five together for a block: " + Pooled.Tally.describe());
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(block, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill is accepted for iron split between hand and chests");
+                }
+                case 715 -> {
+                    int iron = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.IRON_INGOT)) iron += mc.player.containerMenu.getSlot(i).getItem().getCount();
+                    check(iron == 9, "nine iron in the grid, five from the hand and four from the chests, got " + iron);
+                    photo(mc, "08c-emi-fill-same-item-split");
+                    mc.player.closeContainer();
+                }
+                // A recipe with gaps in its pattern, the bucket, which vanilla's craftability check
+                // answers with air for the empty cells: the cause of Rusty's receiver not filling.
+                // The block took four of the chests' five iron, so five more go in through the buffer.
+                case 717 -> server(mc, p -> { p.getInventory().clearContent(); p.getInventory().setItem(0, new ItemStack(Items.IRON_INGOT, 1));
+                    var m = (ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER);
+                    for (int i = 0; i < m.buffer().getContainerSize(); i++) if (m.buffer().getItem(i).isEmpty()) { m.buffer().setItem(i, new ItemStack(Items.IRON_INGOT, 5)); break; } });
+                case 721 -> server(mc, p -> p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))));
+                case 726 -> {
+                    var bucket = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("bucket"));
+                    check(bucket != null, "EMI knows the bucket");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).canCraft(bucket), "EMI counts one iron in hand and the chests' six for a bucket: " + Pooled.Tally.describe());
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(bucket, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill is accepted for a bucket, one iron in hand");
+                }
+                case 729 -> {
+                    int iron = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.IRON_INGOT)) iron += mc.player.containerMenu.getSlot(i).getItem().getCount();
+                    check(iron == 3, "three iron in the grid for the bucket, one from the hand and two from the chests, got " + iron);
+                    photo(mc, "08d-emi-fill-gapped-bucket");
+                    // Clicking again piles the grid up (D-0010): three more from the chests.
+                    var bucket = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("bucket"));
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(bucket, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "a second fill of the bucket is accepted");
+                }
+                case 733 -> {
+                    int iron = 0, stacks = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.IRON_INGOT)) { iron += mc.player.containerMenu.getSlot(i).getItem().getCount(); stacks++; }
+                    check(iron == 6 && stacks == 3, "the second click piled two iron on each of the three cells from the chests, got " + iron + " in " + stacks);
+                    photo(mc, "08d2-emi-fill-bucket-twice");
+                    mc.player.closeContainer();
+                }
+                // Rusty's receiver itself: three steel by tag, two in hand and eight in the chests, a redstone by tag in the chests.
+                case 736 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) { LOG.info("warehousemanager booth: Ranged Weapons Mod not in run/booth/mods, the receiver steps are skipped"); break; }
+                    server(mc, p -> { p.getInventory().clearContent();
+                        p.getInventory().setItem(1, new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("metalsandmaterials:steel_ingot")), 2));
+                        p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))); });
+                }
+                case 742 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) break;
+                    var receiver = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.parse("rangedweaponsmod:lower_receiver"));
+                    check(receiver != null, "EMI knows the lower receiver");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).canCraft(receiver), "EMI counts two steel in hand, the chests' steel and the chests' redstone for a lower receiver: " + Pooled.Tally.describe());
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(receiver, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill is accepted for the receiver");
+                }
+                case 747 -> {
+                    if (!net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) break;
+                    int steel = 0, redstone = 0;
+                    for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (s.is(Items.REDSTONE)) redstone += s.getCount(); else if (!s.isEmpty()) steel += s.getCount(); }
+                    check(steel == 3 && redstone == 1, "three steel and a redstone in the grid, got steel " + steel + " redstone " + redstone);
+                    photo(mc, "08e-emi-fill-receiver");
+                    mc.player.closeContainer();
+                }
+                case 752 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }

@@ -13,3 +13,5 @@ Rationales are append-only. Supersede with a new decision.
 | [D-0007](D-0007.md) | Accepted | The pooled fill unlocks a recipe the player has not unlocked (vanilla's placement refused it silently; Rusty's propeller), except under doLimitedCrafting |
 | [D-0008](D-0008.md) | Accepted | A fill the player and the building cannot cover says what is short in chat, before vanilla's all-red ghost (Rusty's Engine without a boiler) |
 | [D-0009](D-0009.md) | Accepted | The manager's screen is the warehouse's index: every kind under its heading with its total, a search, chest-slot taking, one Insert slot over the buffer |
+| [D-0010](D-0010.md) | Accepted | Clicking a recipe again piles the grid up from the chests, one more craft per click, the most on a shift-click, capped by the stack (vanilla's own rule; Rusty's bullets) |
+| [D-0011](D-0011.md) | Accepted | A shaped recipe with gaps in its pattern fills from the chests: vanilla answers air for an empty cell and the fill read it as an ingredient (Rusty's receiver, taken for a mixed-source failure) |

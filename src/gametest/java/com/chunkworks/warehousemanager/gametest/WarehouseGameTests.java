@@ -411,6 +411,130 @@ public final class WarehouseGameTests {
             h.succeed();
         });
     }
+    /** Rusty's receiver, steel in hand and redstone only in the chests, flashed red and did not
+     * fill (2026-09-24). A recipe with one ingredient in the inventory and the other only in the
+     * building fills like any other: the coal in hand covers the torch's coal-or-charcoal (a tag
+     * ingredient, as steel is), the stick is drawn from the chest, nothing is short; and the other
+     * way about, the stick in hand and the coal in the chest. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void aFillDrawsOnTheInventoryAndTheChestsTogether(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.STICK, 4);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(12, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var torch = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("torch")).orElseThrow();
+            var recipe = (net.minecraft.world.item.crafting.CraftingRecipe) torch.value();
+            player.awardRecipes(List.of(torch));
+            player.getInventory().setItem(0, new ItemStack(Items.COAL, 3));
+            var pooled = new HashMap<String, Integer>();
+            for (int i = 0; i < chestAt(h, chestPos).getContainerSize(); i++) { var s = chestAt(h, chestPos).getItem(i); if (!s.isEmpty()) pooled.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.getCount(), Integer::sum); }
+            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "coal in hand and sticks in the chest cover a torch: nothing to report short");
+            menu.handlePlacement(false, torch, player);
+            int coal = 0, sticks = 0;
+            for (int i = 1; i <= 9; i++) { var s = menu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+            h.assertTrue(coal == 1 && sticks == 1, "the coal from the inventory and a stick from the chest in the grid: coal " + coal + " sticks " + sticks);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 3, "chest debited by one stick, has " + chestAt(h, chestPos).getItem(0).getCount());
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.TORCH), "the result slot shows torches");
+            // The other way about: the plain item in hand, the tag ingredient only in the chest.
+            menu.clearCraftingContent();
+            player.getInventory().clearContent();
+            player.getInventory().setItem(0, new ItemStack(Items.STICK, 2));
+            chestAt(h, chestPos).clearContent();
+            fill(chestAt(h, chestPos), Items.COAL, 4);
+            pooled.clear(); pooled.put("minecraft:coal", 4);
+            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "a stick in hand and coal in the chest cover a torch");
+            menu.handlePlacement(false, torch, player);
+            coal = 0; sticks = 0;
+            for (int i = 1; i <= 9; i++) { var s = menu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+            h.assertTrue(coal == 1 && sticks == 1, "the stick from the inventory and a coal from the chest in the grid: coal " + coal + " sticks " + sticks);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 3, "chest debited by one coal, has " + chestAt(h, chestPos).getItem(0).getCount());
+            h.succeed();
+        });
+    }
+    /** Rusty's receiver (2026-09-24), three steel over a redstone with two empty cells, "flashed
+     * red all around" and did not fill, and was taken for a mixed-source failure. Vanilla's
+     * craftability check answers one item per pattern cell, air for an empty one, and the fill
+     * read the air as an ingredient nobody holds. A bucket, three iron with two gaps, fills from
+     * the chests, and with one iron in hand draws the other two. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void aRecipeWithGapsInItsPatternFillsFromTheChests(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.IRON_INGOT, 5);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(14, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var bucket = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("bucket")).orElseThrow();
+            player.awardRecipes(List.of(bucket));
+            menu.handlePlacement(false, bucket, player);
+            int iron = 0;
+            for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.IRON_INGOT)) iron += menu.getSlot(i).getItem().getCount();
+            h.assertTrue(iron == 3, "three iron in the grid from the chest, got " + iron);
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 2, "chest debited to 2, has " + chestAt(h, chestPos).getItem(0).getCount());
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.BUCKET), "the result slot shows a bucket");
+            // One in hand, the other two from the chest.
+            menu.clearCraftingContent();
+            chestAt(h, chestPos).setItem(0, new ItemStack(Items.IRON_INGOT, 5));
+            player.getInventory().clearContent();
+            player.getInventory().setItem(0, new ItemStack(Items.IRON_INGOT, 1));
+            menu.handlePlacement(false, bucket, player);
+            iron = 0;
+            for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.IRON_INGOT)) iron += menu.getSlot(i).getItem().getCount();
+            h.assertTrue(iron == 3 && chestAt(h, chestPos).getItem(0).getCount() == 3, "one from the hand and two from the chest: grid " + iron + ", chest " + chestAt(h, chestPos).getItem(0).getCount());
+            h.succeed();
+        });
+    }
+    /** Rusty (2026-09-24): bullets craft eight at a time and clicking the recipe again should pile
+     * the grid up, as vanilla's book does from the inventory, instead of doing nothing. Each
+     * click on a recipe the grid already holds draws one more craft from the chests; a
+     * shift-click draws the most the chests allow. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void clickingAgainPilesTheGridUpFromTheChests(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.OAK_PLANKS, 16);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(13, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var stick = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stick")).orElseThrow();
+            player.awardRecipes(List.of(stick));
+            int[] perSlotAfterClick = { 1, 2, 3 };
+            for (int click = 0; click < 3; click++) {
+                menu.handlePlacement(false, stick, player);
+                int planks = planksIn(menu), slots = 0;
+                for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.OAK_PLANKS)) slots++;
+                h.assertTrue(slots == 2 && planks == 2 * perSlotAfterClick[click], "click " + (click + 1) + ": two stacks of " + perSlotAfterClick[click] + " planks in the grid, got " + planks + " in " + slots);
+                h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 16 - planks, "chest debited to " + (16 - planks) + ", has " + chestAt(h, chestPos).getItem(0).getCount());
+            }
+            int loose = 0;
+            for (var s : player.getInventory().items) if (s.is(Items.OAK_PLANKS)) loose += s.getCount();
+            h.assertTrue(loose == 0, "nothing drawn beyond what the grid took, loose planks " + loose);
+            menu.handlePlacement(true, stick, player);
+            h.assertTrue(planksIn(menu) == 16 && chestAt(h, chestPos).isEmpty(), "a shift-click piles the rest on: " + planksIn(menu) + " in the grid, chest empty " + chestAt(h, chestPos).isEmpty());
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.STICK), "the result slot shows sticks");
+            h.succeed();
+        });
+    }
     // The index (D-0009).
     private static int total(ManagerBlockEntity m, Item item) {
         int n = 0;

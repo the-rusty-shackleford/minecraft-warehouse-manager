@@ -52,6 +52,18 @@ public final class Pooling {
         return out;
     }
 
+    /** requires: inGrid, most, stackCap >= 0; effects: how many crafts a click on a recipe asks
+     * for, vanilla's rule: a shift-click ({@code placeAll}) the most the player and the building
+     * can supply ({@code most}); a plain click one craft, or one more than the grid already holds
+     * per stack ({@code inGrid}) when the grid holds this recipe ({@code gridHolds}), so clicking
+     * again piles the grid up; never past {@code stackCap}, the smallest stack the chosen items
+     * make, which the grid could not take. */
+    public static int wanted(boolean placeAll, boolean gridHolds, int inGrid, int most, int stackCap) {
+        if (inGrid < 0 || most < 0 || stackCap < 0) throw new IllegalArgumentException("counts");
+        int asked = placeAll ? most : gridHolds ? inGrid + 1 : 1;
+        return Math.min(asked, stackCap);
+    }
+
     /** requires: wanted >= 0; counts non-negative; effects: crafts is the most of {@code wanted}
      * that the player's {@code held} items plus the containers' {@code pooled} items can supply for
      * the {@code chosen} items (one entry per ingredient of one craft); {@code take} is what to

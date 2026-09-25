@@ -19,12 +19,14 @@ import net.minecraft.world.item.ItemStack;
 public final class ManagerMenu extends AbstractContainerMenu {
     public static final int INSERT = 0, INSERT_X = 80, INSERT_Y = 111, INVENTORY_Y = 143, HOTBAR_Y = 201;
     private final ManagerBlockEntity manager;
+    private final Player player;
     private final SimpleContainer insert = new SimpleContainer(1);
     private boolean sinking;
     /** requires: server side; effects: a menu on the manager (public for the GameTests). */
     public ManagerMenu(int containerId, Inventory inventory, ManagerBlockEntity manager) {
         super(WarehouseManager.MENU.get(), containerId);
         this.manager = manager;
+        this.player = inventory.player;
         addSlot(new Slot(insert, 0, INSERT_X, INSERT_Y) { @Override public void setChanged() { super.setChanged(); sink(); } });
         for (int r = 0; r < 3; r++) for (int c = 0; c < 9; c++) addSlot(new Slot(inventory, c + r * 9 + 9, 8 + c * 18, INVENTORY_Y + r * 18));
         for (int c = 0; c < 9; c++) addSlot(new Slot(inventory, c, 8 + c * 18, HOTBAR_Y));
@@ -35,7 +37,9 @@ public final class ManagerMenu extends AbstractContainerMenu {
     public ManagerBlockEntity manager() { return manager; }
     /** effects: what sits in the Insert slot (the buffer's overflow). */
     public ItemStack inserted() { return insert.getItem(0); }
-    /** effects: on the server, moves the Insert slot's stack into the buffer as far as it fits. */
+    /** effects: on the server, moves the Insert slot's stack into the buffer as far as it fits,
+     * then sends the player a fresh index, so what went in is counted at once rather than at
+     * the next second's refresh (D-0009: a fresh index after every click). */
     private void sink() {
         if (manager == null || sinking) return;
         var s = insert.getItem(0);
@@ -45,6 +49,7 @@ public final class ManagerMenu extends AbstractContainerMenu {
             Transfer.insert(s, manager.buffer());
             if (s.isEmpty()) insert.setItem(0, ItemStack.EMPTY); else insert.setChanged();
         } finally { sinking = false; }
+        if (player instanceof net.minecraft.server.level.ServerPlayer server) Index.send(server, manager, containerId);
     }
     /** effects: shift-click: from the inventory straight into the buffer (the remainder stays
      * where it was), from the Insert slot back to the inventory; the moved stack, or empty when
