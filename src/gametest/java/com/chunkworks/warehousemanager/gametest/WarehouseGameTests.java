@@ -399,7 +399,7 @@ public final class WarehouseGameTests {
             var recipe = (net.minecraft.world.item.crafting.CraftingRecipe) torch.value();
             var pooled = new HashMap<String, Integer>();
             for (int i = 0; i < chestAt(h, chestPos).getContainerSize(); i++) { var s = chestAt(h, chestPos).getItem(i); if (!s.isEmpty()) pooled.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.getCount(), Integer::sum); }
-            var shortage = Pooled.shortage(recipe, Pooled.held(player, menu), pooled);
+            var shortage = Pooled.shortage(recipe, h.getLevel().registryAccess(), Pooled.held(player, menu), pooled);
             h.assertTrue(shortage.size() == 1 && shortage.get(0).missing() == 1 && shortage.get(0).options().contains("minecraft:coal") && shortage.get(0).options().contains("minecraft:charcoal"),
                     "a torch with sticks pooled and no coal is short of one coal or charcoal: " + shortage);
             var text = Pooled.shortMessage(recipe.getResultItem(h.getLevel().registryAccess()), shortage).getString();
@@ -409,7 +409,7 @@ public final class WarehouseGameTests {
             for (int i = 1; i <= 9; i++) inGrid += menu.getSlot(i).getItem().getCount();
             h.assertTrue(inGrid == 0 && chestAt(h, chestPos).getItem(0).getCount() == 4, "nothing placed, nothing drawn: grid " + inGrid + " chest " + chestAt(h, chestPos).getItem(0).getCount());
             player.getInventory().setItem(0, new ItemStack(Items.COAL, 1));
-            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "with a coal in hand the craft is covered");
+            h.assertTrue(Pooled.shortage(recipe, h.getLevel().registryAccess(), Pooled.held(player, menu), pooled).isEmpty(), "with a coal in hand the craft is covered");
             h.succeed();
         });
     }
@@ -438,7 +438,7 @@ public final class WarehouseGameTests {
             player.getInventory().setItem(0, new ItemStack(Items.COAL, 3));
             var pooled = new HashMap<String, Integer>();
             for (int i = 0; i < chestAt(h, chestPos).getContainerSize(); i++) { var s = chestAt(h, chestPos).getItem(i); if (!s.isEmpty()) pooled.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()).toString(), s.getCount(), Integer::sum); }
-            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "coal in hand and sticks in the chest cover a torch: nothing to report short");
+            h.assertTrue(Pooled.shortage(recipe, h.getLevel().registryAccess(), Pooled.held(player, menu), pooled).isEmpty(), "coal in hand and sticks in the chest cover a torch: nothing to report short");
             menu.handlePlacement(false, torch, player);
             int coal = 0, sticks = 0;
             for (int i = 1; i <= 9; i++) { var s = menu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
@@ -452,7 +452,7 @@ public final class WarehouseGameTests {
             chestAt(h, chestPos).clearContent();
             fill(chestAt(h, chestPos), Items.COAL, 4);
             pooled.clear(); pooled.put("minecraft:coal", 4);
-            h.assertTrue(Pooled.shortage(recipe, Pooled.held(player, menu), pooled).isEmpty(), "a stick in hand and coal in the chest cover a torch");
+            h.assertTrue(Pooled.shortage(recipe, h.getLevel().registryAccess(), Pooled.held(player, menu), pooled).isEmpty(), "a stick in hand and coal in the chest cover a torch");
             menu.handlePlacement(false, torch, player);
             coal = 0; sticks = 0;
             for (int i = 1; i <= 9; i++) { var s = menu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
@@ -587,6 +587,38 @@ public final class WarehouseGameTests {
             var sticks = rules.making("minecraft:stick").stream().filter(r -> r.id().equals("minecraft:stick")).findFirst().orElseThrow();
             var text = Pooled.madeMessage(new ItemStack(Items.TORCH), List.of(new Expansion.Step(planks, 1, List.of("minecraft:oak_log")), new Expansion.Step(sticks, 1, List.of("minecraft:oak_planks", "minecraft:oak_planks")))).getString();
             h.assertTrue(text.contains("Made 4 × Oak Planks, 4 × Stick for Torch"), "the chat line names what was made: " + text);
+            h.succeed();
+        });
+    }
+    /** Rusty, 2026-09-27: clicking iron from nuggets with only ingots in the building broke an ingot
+     * into nuggets to make the ingot (D-0013). The click makes nothing, places nothing and draws
+     * nothing; the five ingots stay in the chest. With nine nuggets in the chest too, the same click
+     * fills from them as ever and the ingots are still not touched. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void anIngotIsNotMadeFromNuggetsBrokenFromIngots(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.IRON_INGOT, 5);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            var m = manager(h);
+            h.assertTrue(m.settled() && m.units().size() == 1, "one chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(16, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var fromNuggets = recipe(h, "iron_ingot_from_nuggets");
+            player.awardRecipes(List.of(fromNuggets));
+            menu.handlePlacement(false, fromNuggets, player);
+            h.assertTrue(inGrid(menu, Items.IRON_NUGGET) == 0 && inGrid(menu, Items.IRON_INGOT) == 0, "nothing placed: nuggets " + inGrid(menu, Items.IRON_NUGGET));
+            h.assertTrue(carried(player, Items.IRON_NUGGET) == 0 && carried(player, Items.IRON_INGOT) == 0, "nothing made or drawn: nuggets " + carried(player, Items.IRON_NUGGET) + " ingots " + carried(player, Items.IRON_INGOT));
+            h.assertTrue(chestAt(h, chestPos).countItem(Items.IRON_INGOT) == 5, "the five ingots stay in the chest: " + chestAt(h, chestPos).countItem(Items.IRON_INGOT));
+            h.assertTrue(player.getStats().getValue(net.minecraft.stats.Stats.ITEM_CRAFTED.get(Items.IRON_NUGGET)) == 0, "no nugget was crafted");
+            chestAt(h, chestPos).setItem(1, new ItemStack(Items.IRON_NUGGET, 9));
+            menu.handlePlacement(false, fromNuggets, player);
+            h.assertTrue(inGrid(menu, Items.IRON_NUGGET) == 9, "with nine nuggets in the chest the grid fills from them: " + inGrid(menu, Items.IRON_NUGGET));
+            h.assertTrue(chestAt(h, chestPos).countItem(Items.IRON_INGOT) == 5 && chestAt(h, chestPos).countItem(Items.IRON_NUGGET) == 0, "the nuggets came from the chest, the ingots stayed");
             h.succeed();
         });
     }

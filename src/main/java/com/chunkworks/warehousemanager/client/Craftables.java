@@ -50,10 +50,11 @@ public final class Craftables {
         if (known != null) return known;
         boolean answer = false;
         var cells = Pooled.ingredients(recipe);
-        if (!cells.isEmpty()) {
+        var level = Minecraft.getInstance().level;
+        if (!cells.isEmpty() && level != null) {
             boolean possible = true;
             for (var cell : cells) { boolean any = false; for (var o : cell) any |= reachable().contains(o); if (!any) { possible = false; break; } }
-            answer = possible && Expansion.plan(cells, crafts, available, rules, Pooled.DEPTH).covered();
+            answer = possible && Expansion.plan(Pooled.key(recipe.getResultItem(level.registryAccess()).getItem()), cells, crafts, available, rules, Pooled.DEPTH).covered();
         }
         memo.put(key, answer);
         return answer;

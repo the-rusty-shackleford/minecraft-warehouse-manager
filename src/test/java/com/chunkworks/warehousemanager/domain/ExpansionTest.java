@@ -16,7 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * first; an alternative that is only makeable later in its list; several rules for one item, the
  * first backed out cleanly (what it took is there for the second) and yield-ascending order (iron
  * and coal before a block is broken); the ingot-nugget-block cycle terminating short with nothing
- * on hand and served by nuggets or a block when they are; a shared material never counted twice;
+ * on hand and served by nuggets or a block when they are; the chain of what is being made: the
+ * recipe's own result on hand is never broken down for its ingredients (the ingot from nuggets
+ * with only ingots and a block on hand, Rusty's report), nor at any depth, while the same path
+ * serves any other result, and a rule may spend its own result from what is on hand, at the top
+ * and below it; a shared material never counted twice;
  * one kind per cell (a coal and a charcoal fill two cells for one craft but not one cell for two);
  * shortages merged per option list in the recipe's order; the rule book's order and {@code only};
  * bad input; immutability. most: nothing, the cap, the material bound, a made bound, bisection on
@@ -44,7 +48,9 @@ final class ExpansionTest {
     private static final Rules GUNS = Rules.of(List.of(R_STEEL, R_UPPER, R_LOWER, R_BARREL, R_STOCK));
     private static final Rules METALS = Rules.of(List.of(R_STEEL_NUGGETS, R_STEEL, R_STEEL_BLOCK, R_NUGGET, R_BLOCK));
     private static List<List<String>> nine(String item) { return List.of(List.of(item), List.of(item), List.of(item), List.of(item), List.of(item), List.of(item), List.of(item), List.of(item), List.of(item)); }
-    private static Plan plan(List<List<String>> cells, int crafts, Map<String, Integer> available, Rules rules, int depth) { return Expansion.plan(cells, crafts, available, rules, depth); }
+    /** A result nothing makes and no cell names, for the partitions that are not about the chain. */
+    private static final String MADE = "test:made", TORCH_ID = "minecraft:torch";
+    private static Plan plan(List<List<String>> cells, int crafts, Map<String, Integer> available, Rules rules, int depth) { return Expansion.plan(MADE, cells, crafts, available, rules, depth); }
 
     @Test void coveredWithNothingToMakeHasNoSteps() {
         var p = plan(TORCH, 1, Map.of(COAL, 1, STICK, 1), WOOD, 8);
@@ -121,6 +127,33 @@ final class ExpansionTest {
         assertEquals(List.of(new Step(R_STEEL_BLOCK, 1, List.of(BLOCK))), plan(cell, 1, Map.of(BLOCK, 1), METALS, 8).steps());
         assertEquals(List.of(new Pooling.Shortage(nine(NUGGET).get(0), 1)), plan(List.of(List.of(NUGGET)), 1, Map.of(), METALS, 8).shortages(), "nor a nugget from an ingot from nuggets");
     }
+    @Test void anIngotIsNeverMadeFromNuggetsBrokenFromIngots() {
+        // Rusty, 2026-09-27: the ingot-from-nuggets recipe, clicked with ingots in the chests and no
+        // nuggets, broke an ingot into nuggets to make the ingot.
+        var p = Expansion.plan(STEEL, nine(NUGGET), 1, Map.of(STEEL, 5, BLOCK, 1), METALS, 8);
+        assertEquals(List.of(), p.steps(), "no ingot is broken, nor a block, to make the ingot");
+        assertEquals(List.of(new Pooling.Shortage(List.of(NUGGET), 9)), p.shortages(), "short of the nine nuggets");
+        assertTrue(Expansion.plan(STEEL, nine(NUGGET), 1, Map.of(NUGGET, 9), METALS, 8).covered(), "with nine nuggets the ingot is made as ever");
+        assertEquals(0, Expansion.most(STEEL, nine(NUGGET), 64, Map.of(STEEL, 64), METALS, 8), "not one craft from ingots alone");
+    }
+    @Test void nothingBeingMadeIsSpentOnItsOwnIngredientsHoweverDeep() {
+        var r = "t:r"; var a = "t:a"; var b = "t:b";
+        var rules = Rules.of(List.of(new Rule("t:make_a", List.of(List.of(b)), a, 1), new Rule("t:make_b", List.of(List.of(r)), b, 1)));
+        var p = Expansion.plan(r, List.of(List.of(a)), 1, Map.of(r, 1), rules, 8);
+        assertEquals(List.of(new Pooling.Shortage(List.of(a), 1)), p.shortages(), "r is not broken into b into a to make r");
+        assertEquals(List.of(), p.steps());
+        assertTrue(Expansion.plan(MADE, List.of(List.of(a)), 1, Map.of(r, 1), rules, 8).covered(), "for anything else, r into b into a is a fine plan");
+    }
+    @Test void aRuleMaySpendItsOwnResultFromWhatIsOnHand() {
+        var x = "t:x"; var y = "t:y"; var z = "t:z";
+        var grow = new Rule("t:grow", List.of(List.of(x), List.of(y)), x, 2);
+        var rules = Rules.of(List.of(grow));
+        assertEquals(new Plan(List.of(), List.of(x, y), List.of()), Expansion.plan(x, grow.cells(), 1, Map.of(x, 1, y, 1), rules, 8),
+                "the recipe itself takes its own result from what is on hand");
+        var p = Expansion.plan(z, List.of(List.of(x)), 2, Map.of(x, 1, y, 1), rules, 8);
+        assertTrue(p.covered(), "one x and a y make the second x: " + p.shortages());
+        assertEquals(List.of(new Step(grow, 1, List.of(x, y))), p.steps());
+    }
     @Test void aSharedMaterialIsNeverCountedTwice() {
         var cells = List.of(List.of(OAK), List.of(STICK));
         assertEquals(List.of(new Pooling.Shortage(List.of(STICK), 1)), plan(cells, 1, Map.of(OAK, 2), WOOD, 8).shortages(), "the plank cell takes one, the sticks need two");
@@ -142,12 +175,12 @@ final class ExpansionTest {
         assertEquals(List.of(new Pooling.Shortage(List.of(STEEL), 2)), plan(R_LOWER.cells(), 1, Map.of(STEEL, 1, REDSTONE, 1), Rules.NONE, 8).shortages(), "one steel covers one cell");
     }
     @Test void mostIsTheLargestCoveredCount() {
-        assertEquals(0, Expansion.most(TORCH, 64, Map.of(), WOOD, 8));
-        assertEquals(3, Expansion.most(TORCH, 64, Map.of(COAL, 3, LOG, 1), WOOD, 8), "bounded by the coal");
-        assertEquals(2, Expansion.most(TORCH, 2, Map.of(COAL, 3, LOG, 1), WOOD, 8), "bounded by the cap");
-        assertEquals(8, Expansion.most(TORCH, 64, Map.of(COAL, 10, LOG, 1), WOOD, 8), "one log, four planks, eight sticks");
-        assertEquals(1, Expansion.most(TORCH, 64, Map.of(COAL, 1, STICK, 1), WOOD, 0));
-        assertEquals(0, Expansion.most(TORCH, 0, Map.of(COAL, 1, STICK, 1), WOOD, 0));
+        assertEquals(0, Expansion.most(TORCH_ID, TORCH, 64, Map.of(), WOOD, 8));
+        assertEquals(3, Expansion.most(TORCH_ID, TORCH, 64, Map.of(COAL, 3, LOG, 1), WOOD, 8), "bounded by the coal");
+        assertEquals(2, Expansion.most(TORCH_ID, TORCH, 2, Map.of(COAL, 3, LOG, 1), WOOD, 8), "bounded by the cap");
+        assertEquals(8, Expansion.most(TORCH_ID, TORCH, 64, Map.of(COAL, 10, LOG, 1), WOOD, 8), "one log, four planks, eight sticks");
+        assertEquals(1, Expansion.most(TORCH_ID, TORCH, 64, Map.of(COAL, 1, STICK, 1), WOOD, 0));
+        assertEquals(0, Expansion.most(TORCH_ID, TORCH, 0, Map.of(COAL, 1, STICK, 1), WOOD, 0));
     }
     @Test void reachableGrowsOneLevelARound() {
         assertEquals(Set.of(LOG, COAL), Expansion.reachable(Set.of(LOG, COAL), WOOD, 0));
@@ -163,7 +196,8 @@ final class ExpansionTest {
         assertThrows(IllegalArgumentException.class, () -> plan(TORCH, 1, Map.of(), WOOD, -1));
         assertThrows(IllegalArgumentException.class, () -> plan(TORCH, 1, Map.of(COAL, -1), WOOD, 8));
         assertThrows(IllegalArgumentException.class, () -> plan(List.of(List.of()), 1, Map.of(), WOOD, 8));
-        assertThrows(IllegalArgumentException.class, () -> Expansion.most(TORCH, -1, Map.of(), WOOD, 8));
+        assertThrows(NullPointerException.class, () -> Expansion.plan(null, TORCH, 1, Map.of(), WOOD, 8), "a plan names what it makes");
+        assertThrows(IllegalArgumentException.class, () -> Expansion.most(TORCH_ID, TORCH, -1, Map.of(), WOOD, 8));
         assertThrows(IllegalArgumentException.class, () -> Expansion.reachable(Set.of(), WOOD, -1));
         assertThrows(IllegalArgumentException.class, () -> new Rule(STICK, List.of(PLANKS), STICK, 0));
         assertThrows(IllegalArgumentException.class, () -> new Rule(STICK, List.of(List.of()), STICK, 1));

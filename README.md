@@ -115,8 +115,10 @@ click cannot finish); shaped and shapeless recipes with ordinary ingredients mak
 own recipe class can be the recipe you click, not a part the fill makes); each cell of the recipe
 is filled with one kind for all the crafts of a click, as the vanilla book does; where an item has
 several recipes, the one with the smallest yield that works is used (three steel come from iron
-and coal before a block is broken into nine), and a part is never made by way of itself (no nugget
-from an ingot to make the ingot); the choice is made once, in the recipe's order, and never
+and coal before a block is broken into nine); nothing being made is spent on its own ingredients,
+from the chests or by making it, however deep (clicking iron from nuggets with only ingots in the
+chests is short of the nuggets; no ingot is broken to make the ingot, D-0013), though a recipe
+may spend its own result from what is on hand; the choice is made once, in the recipe's order, and never
 revisited, so a fill that could only succeed by a cleverer split of the same materials is reported
 short instead; the parts need room in your inventory. A recipe you have not unlocked is used for a
 part exactly as for the recipe you click (unlocked by the fill, or refused under
@@ -272,6 +274,10 @@ and for a rifle, the trust panel and a refusal. `./gradlew build` produces
 
 ## Status
 
+**0.5.1**: a click never breaks down what it is making to make that thing's ingredients. 0.5.0
+guarded only the parts below the recipe clicked, so iron from nuggets, clicked with ingots in the
+chests, broke an ingot into nuggets to make the ingot (Rusty's report); now it is short of the
+nuggets, and the book and EMI no longer light it.
 **0.5.0**: a part the building could make at the table counts as available, all the way down (a
 rifle from receivers from steel from iron and coal), in the vanilla book and in EMI, and a click
 makes the parts into your inventory before filling the grid, with a chat line naming them.

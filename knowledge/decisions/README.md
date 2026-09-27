@@ -16,3 +16,4 @@ Rationales are append-only. Supersede with a new decision.
 | [D-0010](D-0010.md) | Accepted | Clicking a recipe again piles the grid up from the chests, one more craft per click, the most on a shift-click, capped by the stack (vanilla's own rule; Rusty's bullets) |
 | [D-0011](D-0011.md) | Accepted | A shaped recipe with gaps in its pattern fills from the chests: vanilla answers air for an empty cell and the fill read it as an ingredient (Rusty's receiver, taken for a mixed-source failure) |
 | [D-0012](D-0012.md) | Accepted | A part the building could make at the table counts as available, the full tree down, crafting recipes only, and the fill makes the parts first (Rusty's rifle from receivers from steel) |
+| [D-0013](D-0013.md) | Accepted | Nothing being made is spent on its own ingredients, from the chests or by making it, at any depth; the planner is told the recipe's result (Rusty's ingot made from nuggets broken from ingots) |

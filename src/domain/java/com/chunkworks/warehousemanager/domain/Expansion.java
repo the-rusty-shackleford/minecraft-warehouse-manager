@@ -81,17 +81,23 @@ public final class Expansion {
     }
     private Expansion() {}
 
-    /** requires: no cell empty; crafts >= 0; counts in {@code available} non-negative; depth >= 0;
-     * effects: the plan for {@code crafts} crafts of a recipe with the given cells from
-     * {@code available} and what {@code rules} can make of it, sub-crafts nested at most
-     * {@code depth} deep (0: nothing is made, the answer is vanilla's). Each cell takes the first of
-     * its options of which {@code crafts} are on hand, or else the first that can be made up to
-     * that number; an item is made by the first of its rules whose cells can in turn be covered,
-     * as many times as its yield needs, never while that same item is already being made higher up
-     * (a nugget is not made from an ingot to make the ingot). A cell that fails is reported short by
-     * the crafts its best option cannot cover, and the plan goes on to the next cell so every
-     * shortage is named. {@code available} is not modified. */
-    public static Plan plan(List<List<String>> cells, int crafts, Map<String, Integer> available, Rules rules, int depth) {
+    /** requires: result non-null; no cell empty; crafts >= 0; counts in {@code available}
+     * non-negative; depth >= 0;
+     * effects: the plan for {@code crafts} crafts of a recipe that makes {@code result} with the
+     * given cells, from {@code available} and what {@code rules} can make of it, sub-crafts nested
+     * at most {@code depth} deep (0: nothing is made, the answer is vanilla's). Each cell takes the
+     * first of its options of which {@code crafts} are on hand, or else the first that can be made
+     * up to that number; an item is made by the first of its rules whose cells can in turn be
+     * covered, as many times as its yield needs. The items being made form a chain from
+     * {@code result} down: no item on the chain is made again below itself, and no cell takes an
+     * item that is on the chain above the rule it belongs to, from what is on hand or by making it,
+     * since spending what is being made to make its own ingredients gains nothing (an ingot is not
+     * broken into nuggets to make the ingot, Rusty's report of 2026-09-27). A rule may still spend
+     * its own result from what is on hand. A cell that fails is reported short by the crafts its
+     * best option cannot cover, and the plan goes on to the next cell so every shortage is named.
+     * {@code available} is not modified. */
+    public static Plan plan(String result, List<List<String>> cells, int crafts, Map<String, Integer> available, Rules rules, int depth) {
+        Objects.requireNonNull(result, "result");
         if (crafts < 0) throw new IllegalArgumentException("crafts");
         if (depth < 0) throw new IllegalArgumentException("depth");
         Objects.requireNonNull(rules);
@@ -100,10 +106,11 @@ public final class Expansion {
         var steps = new ArrayList<Step>();
         var picks = new ArrayList<String>();
         var shortages = new LinkedHashMap<List<String>, Integer>();
+        var chain = new ArrayList<String>(List.of(result));
         for (var cell : cells) {
             if (cell.isEmpty()) throw new IllegalArgumentException("cell");
             if (crafts == 0) { picks.add(cell.get(0)); continue; }
-            var pick = cover(cell, crafts, left, steps, rules, depth, new HashSet<>());
+            var pick = cover(cell, crafts, left, steps, rules, depth, chain);
             if (pick == null) {
                 int best = 0;
                 for (var option : cell) best = Math.max(best, left.getOrDefault(option, 0));
@@ -132,13 +139,13 @@ public final class Expansion {
     /** requires: as {@link #plan}, cap >= 0; effects: the largest number of crafts up to
      * {@code cap} whose plan is covered, by bisection, so never above the truth and, the plan
      * being greedy, possibly below it where a plan for k fails while one for k + 1 would pass. */
-    public static int most(List<List<String>> cells, int cap, Map<String, Integer> available, Rules rules, int depth) {
+    public static int most(String result, List<List<String>> cells, int cap, Map<String, Integer> available, Rules rules, int depth) {
         if (cap < 0) throw new IllegalArgumentException("cap");
         int lo = 0, hi = cap;
-        plan(cells, 0, available, rules, depth); // validates the arguments even when cap is 0
+        plan(result, cells, 0, available, rules, depth); // validates the arguments even when cap is 0
         while (lo < hi) {
             int mid = (lo + hi + 1) >>> 1;
-            if (plan(cells, mid, available, rules, depth).covered()) lo = mid; else hi = mid - 1;
+            if (plan(result, cells, mid, available, rules, depth).covered()) lo = mid; else hi = mid - 1;
         }
         return lo;
     }
@@ -164,39 +171,43 @@ public final class Expansion {
         return Set.copyOf(set);
     }
 
-    /** effects: the option chosen for the cell, with {@code left} debited by {@code n} of it and
-     * {@code steps} extended by whatever was made; or null with both untouched. */
-    private static String cover(List<String> cell, int n, Map<String, Integer> left, List<Step> steps, Rules rules, int depth, Set<String> path) {
+    /** requires: chain is the items being made, the recipe's result first and the result of the
+     * rule this cell belongs to last; effects: the option chosen for the cell, with {@code left}
+     * debited by {@code n} of it and {@code steps} extended by whatever was made; or null with both
+     * untouched. An option on the chain above the cell's rule is never chosen. */
+    private static String cover(List<String> cell, int n, Map<String, Integer> left, List<Step> steps, Rules rules, int depth, List<String> chain) {
         for (var option : cell) {
+            int at = chain.indexOf(option);
+            if (at >= 0 && at < chain.size() - 1) continue;
             int have = left.getOrDefault(option, 0);
             if (have >= n) { left.put(option, have - n); return option; }
             var before = new HashMap<>(left);
             int stepsBefore = steps.size();
-            if (make(option, n - have, left, steps, rules, depth, path)) { left.merge(option, -n, Integer::sum); return option; }
+            if (make(option, n - have, left, steps, rules, depth, chain)) { left.merge(option, -n, Integer::sum); return option; }
             left.clear(); left.putAll(before);
             while (steps.size() > stepsBefore) steps.remove(steps.size() - 1);
         }
         return null;
     }
     /** effects: makes at least {@code need} of the item by the first of its rules whose cells can
-     * be covered (recursively, one level shallower), adding what was made to {@code left} and the
-     * step after its sub-steps to {@code steps}; false with both untouched when none can, the depth
-     * is spent, or the item is already being made up the path. */
-    private static boolean make(String item, int need, Map<String, Integer> left, List<Step> steps, Rules rules, int depth, Set<String> path) {
-        if (depth <= 0 || path.contains(item)) return false;
+     * be covered (recursively, one level shallower, with the item at the end of the chain), adding
+     * what was made to {@code left} and the step after its sub-steps to {@code steps}; false with
+     * both untouched when none can, the depth is spent, or the item is already on the chain. */
+    private static boolean make(String item, int need, Map<String, Integer> left, List<Step> steps, Rules rules, int depth, List<String> chain) {
+        if (depth <= 0 || chain.contains(item)) return false;
         for (var rule : rules.making(item)) {
             int times = (need + rule.yield() - 1) / rule.yield();
             var before = new HashMap<>(left);
             int stepsBefore = steps.size();
             var picks = new ArrayList<String>(rule.cells().size());
             boolean ok = true;
-            path.add(item);
+            chain.add(item);
             for (var cell : rule.cells()) {
-                var pick = cover(cell, times, left, steps, rules, depth - 1, path);
+                var pick = cover(cell, times, left, steps, rules, depth - 1, chain);
                 if (pick == null) { ok = false; break; }
                 picks.add(pick);
             }
-            path.remove(item);
+            chain.remove(chain.size() - 1);
             if (ok) { steps.add(new Step(rule, times, picks)); left.merge(item, times * rule.yield(), Integer::sum); return true; }
             left.clear(); left.putAll(before);
             while (steps.size() > stepsBefore) steps.remove(steps.size() - 1);

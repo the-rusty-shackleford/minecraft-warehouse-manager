@@ -1,6 +1,17 @@
 # Warehouse Manager
 
-Version 0.5.0, built 2026-09-25. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.5.1, built 2026-09-27. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+**0.5.1 (2026-09-27), built, verified and committed, NOT released** (waits on Rusty's go; he
+asked for it to ship in the same release as Village Deed 2.1.0): Rusty on pack 1.66.0, "I am
+creating iron ingots, which it is doing by using iron nuggets, which it is doing by breaking down
+other iron ingots." D-0012's cycle guard never had the clicked recipe's result on its path and
+only stopped *making*, not *taking from stock*, an item on it ([D-0013](decisions/D-0013.md)).
+`Expansion.plan`/`most` now take the result; a cell never takes an item on the chain above its
+rule, from stock or by making it, at any depth; a rule may still spend its own result from stock.
+Reproduced first (a JUnit case, and a GameTest of the real click that failed on the old behaviour
+with "nothing placed: nuggets 9"). Clean build green: 83 JUnit, 26 GameTests, booth 78 checks. Jar
+`warehousemanager-0.5.1.jar`, sha1 `522c06ee…`, 197485 bytes. Not seen live: Rusty's click.
 
 0.5.0 (2026-09-25): Rusty asked that a rifle whose receivers are themselves craftable from what
 the building holds show as craftable, and that the fill make the sub-parts. Their three calls,

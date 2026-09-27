@@ -212,10 +212,11 @@ public final class Pooled {
         var held = held(player, menu);
         var pooledIds = ids(tally(m));
         var result = recipe.getResultItem(player.registryAccess());
+        var resultId = key(result.getItem());
         // What one craft needs that is neither on hand nor makeable: vanilla would answer with a
         // ghost recipe, every slot red; say what is short instead (D-0008).
         long t0 = System.nanoTime();
-        var one = Expansion.plan(cells, 1, available(held, pooledIds), rules, DEPTH);
+        var one = Expansion.plan(resultId, cells, 1, available(held, pooledIds), rules, DEPTH);
         if (!one.covered()) {
             LOG.info("pooled fill of {} for {}: not craftable from inventory, grid and building, nor makeable ({} rules, {} ms); short of {}", holder.id(), player.getScoreboardName(), rules.size(), (System.nanoTime() - t0) / 1_000_000, one.shortages());
             player.displayClientMessage(shortMessage(result, one.shortages()), false);
@@ -227,13 +228,13 @@ public final class Pooled {
         // smallest stack the chosen items make. The most counts what can still be made.
         int stackCap = Integer.MAX_VALUE;
         for (var pick : one.picks()) stackCap = Math.min(stackCap, item(pick).getDefaultMaxStackSize());
-        int most = Expansion.most(cells, stackCap, available(held, pooledIds), rules, DEPTH);
+        int most = Expansion.most(resultId, cells, stackCap, available(held, pooledIds), rules, DEPTH);
         @SuppressWarnings("unchecked") boolean gridHolds = menu.recipeMatches((RecipeHolder<CraftingRecipe>) holder);
         int inGrid = Integer.MAX_VALUE;
         for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty()) inGrid = Math.min(inGrid, s.getCount()); }
         if (inGrid == Integer.MAX_VALUE) inGrid = 0;
         int wanted = Pooling.wanted(placeAll, gridHolds, inGrid, most, stackCap);
-        var plan = Expansion.plan(cells, Math.min(wanted, most), available(held, pooledIds), rules, DEPTH);
+        var plan = Expansion.plan(resultId, cells, Math.min(wanted, most), available(held, pooledIds), rules, DEPTH);
         LOG.info("pooled fill of {} for {}: {} craft(s) wanted, {} makeable at most, {} step(s) planned in {} ms", holder.id(), player.getScoreboardName(), wanted, most, plan.steps().size(), (System.nanoTime() - t0) / 1_000_000);
         if (!plan.steps().isEmpty()) {
             var made = new ArrayList<Expansion.Step>();
@@ -253,7 +254,7 @@ public final class Pooled {
         var chosen = new IntArrayList();
         if (!all.canCraft(recipe, chosen)) {
             // A step could not be made (the recipe refused its picks, the inventory was full).
-            var short_ = shortage(recipe, held, pooledIds);
+            var short_ = shortage(recipe, player.registryAccess(), held, pooledIds);
             LOG.info("pooled fill of {} for {}: not craftable after the steps; short of {}", holder.id(), player.getScoreboardName(), short_);
             if (!short_.isEmpty()) player.displayClientMessage(shortMessage(result, short_), false);
             return;
@@ -357,8 +358,8 @@ public final class Pooled {
     }
     /** effects: what one craft of the recipe is short of, counting {@code held} and {@code pooled}
      * together and making nothing: the domain's answer over the recipe's cells. */
-    public static List<Pooling.Shortage> shortage(CraftingRecipe recipe, Map<String, Integer> held, Map<String, Integer> pooled) {
-        return Expansion.plan(ingredients(recipe), 1, available(held, pooled), Expansion.Rules.NONE, 0).shortages();
+    public static List<Pooling.Shortage> shortage(CraftingRecipe recipe, HolderLookup.Provider registries, Map<String, Integer> held, Map<String, Integer> pooled) {
+        return Expansion.plan(key(recipe.getResultItem(registries).getItem()), ingredients(recipe), 1, available(held, pooled), Expansion.Rules.NONE, 0).shortages();
     }
     /** effects: "Can't fill Engine from here: short of 1 × Boiler, 2 × Piston." with each
      * shortage named by the first item its ingredient accepts. */
