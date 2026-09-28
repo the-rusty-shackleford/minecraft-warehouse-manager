@@ -148,3 +148,12 @@ client: the trust panel against a real second player.
 Rusty authorized release of 0.1.0 on 2026-09-22 together with Magical Map 0.2.0, of 0.2.0 on
 2026-09-23 as pack 1.56.0 and of 0.2.1 the same night as pack 1.56.2. Booths passed and
 their photos were inspected; see [devtools/verification](../devtools/verification/).
+
+## Published and deployed — 2026-09-28, pack 1.67.0
+
+Version 0.5.1 is [published](https://github.com/the-rusty-shackleford/minecraft-warehouse-manager/releases/tag/v0.5.1)
+(asset SHA-1 `522c06ee1adff90bd2dfa236a9da7055e9b9f163`, matching the clean-built jar) and deployed through Mod Hub in pack
+**1.67.0**, replacing 0.5.0, on Rusty's "release with everything else after a 5 minute server
+warning": restart 01:13:36 UTC at the end of the warning with nobody on, `Done` at 01:13:52,
+"(0.5.0 -> 0.5.1)" in the log, 36 baseline errors, 20 TPS, parity clean. The server repo's
+`knowledge/releases/pack-1.67.0.md` has the deployment. Not yet seen in play by Rusty.
