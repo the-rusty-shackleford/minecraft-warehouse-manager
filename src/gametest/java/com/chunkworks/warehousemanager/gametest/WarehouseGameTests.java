@@ -461,6 +461,51 @@ public final class WarehouseGameTests {
             h.succeed();
         });
     }
+    /** D-0015: what the player carries in a bag counts and is taken like the inventory. The coal
+     * only in a pocketed bag and the sticks in the chest make a torch: the coal from the bag (through
+     * vanilla's placement, which Carried lets take from bags), a stick from the chest. Then a
+     * crafting table from one log carried only in the bag: the pooled fill makes the planks first,
+     * taking the log out of the bag, and places them. The bag is Backpacks+'s by registry id (loaded
+     * on the gametest server), in a pocket, not worn. */
+    @GameTest(template = "house", timeoutTicks = 400, skyAccess = true) public void aFillDrawsOnTheBagsTheInventoryAndTheChests(GameTestHelper h) {
+        shell(h);
+        var chestPos = new BlockPos(12, 2, 4);
+        var table = new BlockPos(6, 2, 6);
+        h.setBlock(chestPos, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, chestPos), Items.STICK, 4);
+        h.setBlock(table, Blocks.CRAFTING_TABLE);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        h.runAtTickTime(120, () -> {
+            h.assertTrue(manager(h).settled(), "the chest managed");
+            var player = mock(h, table);
+            var menu = new CraftingMenu(13, player.getInventory(), ContainerLevelAccess.create(h.getLevel(), h.absolutePos(table)));
+            player.containerMenu = menu;
+            var bag = new ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("backpacksplus:basic_backpack")));
+            bag.set(net.minecraft.core.component.DataComponents.CONTAINER, net.minecraft.world.item.component.ItemContainerContents.fromItems(List.of(new ItemStack(Items.COAL, 2), new ItemStack(Items.OAK_LOG, 1))));
+            player.getInventory().setItem(20, bag);
+            h.assertTrue(Pooled.held(player, menu).getOrDefault("minecraft:coal", 0) == 2, "the bag's coal is held: " + Pooled.held(player, menu));
+            var torch = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("torch")).orElseThrow();
+            player.awardRecipes(List.of(torch));
+            menu.handlePlacement(false, torch, player);
+            int coal = 0, sticks = 0;
+            for (int i = 1; i <= 9; i++) { var s = menu.getSlot(i).getItem(); if (s.is(Items.COAL)) coal += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+            h.assertTrue(coal == 1 && sticks == 1, "a coal from the bag and a stick from the chest in the grid: coal " + coal + " sticks " + sticks);
+            java.util.function.Function<net.minecraft.world.item.Item, Integer> inBag = item -> player.getInventory().getItem(20).getOrDefault(net.minecraft.core.component.DataComponents.CONTAINER, net.minecraft.world.item.component.ItemContainerContents.EMPTY).stream().filter(x -> x.is(item)).mapToInt(ItemStack::getCount).sum();
+            h.assertTrue(inBag.apply(Items.COAL) == 1, "the bag paid one coal");
+            h.assertTrue(chestAt(h, chestPos).getItem(0).getCount() == 3, "the chest paid one stick");
+            menu.clearCraftingContent();
+            for (int i = 0; i < 36; i++) if (i != 20) player.getInventory().setItem(i, ItemStack.EMPTY);
+            var craftingTable = h.getLevel().getServer().getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("crafting_table")).orElseThrow();
+            player.awardRecipes(List.of(craftingTable));
+            menu.handlePlacement(false, craftingTable, player);
+            int planks = 0;
+            for (int i = 1; i <= 9; i++) if (menu.getSlot(i).getItem().is(Items.OAK_PLANKS)) planks += menu.getSlot(i).getItem().getCount();
+            h.assertTrue(planks == 4, "four planks made from the bag's log and placed: " + planks);
+            h.assertTrue(inBag.apply(Items.OAK_LOG) == 0, "the log came out of the bag");
+            h.assertTrue(menu.getSlot(0).getItem().is(Items.CRAFTING_TABLE), "the result slot shows a crafting table");
+            h.succeed();
+        });
+    }
     /** Rusty's receiver (2026-09-24), three steel over a redstone with two empty cells, "flashed
      * red all around" and did not fill, and was taken for a mixed-source failure. Vanilla's
      * craftability check answers one item per pattern cell, air for an empty one, and the fill

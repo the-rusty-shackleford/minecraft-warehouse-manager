@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 Rusty Shackleford and nfx. SPDX-License-Identifier: AGPL-3.0-or-later */
 package com.chunkworks.warehousemanager;
 
+import com.chunkworks.carried.api.Carried;
 import com.chunkworks.warehousemanager.domain.Access;
 import com.chunkworks.warehousemanager.domain.Take;
 import com.chunkworks.warehousemanager.domain.Taxonomy;
@@ -171,7 +172,7 @@ public final class Index {
                 var got = m.pull(pick.kind(), decision.amount());
                 if (got.isEmpty()) return;
                 if (decision.kind() == Take.Kind.TO_CURSOR) menu.setCarried(got);
-                else player.getInventory().placeItemBackInInventory(got);
+                else Carried.giveOrDrop(player, got);
                 LOG.info("{} took {} from the warehouse at {}", player.getScoreboardName(), got, m.getBlockPos().toShortString());
             }
             case INSERT_ALL -> { Transfer.insert(carried, m.buffer()); menu.setCarried(carried.isEmpty() ? ItemStack.EMPTY : carried); }

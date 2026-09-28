@@ -42,7 +42,9 @@ import java.util.function.Consumer;
  * EMI drawing from the chests, the furnished hut, the trust panel before and after a click, and
  * a stranger's refusal at nfx's hut; then a second warehouse 2,048 blocks east, unloaded, coming
  * into reach while a table is open, its copper filling a grid, and the index's breakdown of what
- * each warehouse holds (D-0014). Screenshots need a human eye; this fixture never ships. */
+ * each warehouse holds (D-0014); last, a worn Backpacks+ bag's sticks counted by EMI at the table
+ * and filled into a stone pickaxe with the chests' cobblestone (D-0015). Screenshots need a human
+ * eye; this fixture never ships. */
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
 public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
@@ -188,6 +190,10 @@ public final class WarehouseBooth {
                     @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
                     var handlers = dev.emi.emi.registry.EmiRecipeFiller.getAllHandlers(screen);
                     check(!handlers.isEmpty() && handlers.get(0) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "the warehouse handler stands first for the crafting table: " + handlers);
+                    // Backpacks+ is on the booth's client, as in the pack: its table handler stands
+                    // behind this one and ahead of EMI's own (D-0015, its D-0033).
+                    check(handlers.size() == 3 && handlers.get(1).getClass().getName().equals("com.chunkworks.backpacksplus.integration.emi.BagRecipeHandlers$Crafting")
+                            && handlers.get(2).getClass().getName().startsWith("dev.emi.emi."), "Backpacks+'s handler behind it, EMI's own last: " + handlers);
                     var inventory = dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player);
                     check(inventory.canCraft(recipe), "EMI counts the building's planks with an empty inventory: " + Pooled.Tally.describe());
                     check(dev.emi.emi.registry.EmiRecipeFiller.getFirstValidHandler(recipe, screen) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "EMI fills sticks through the warehouse handler");
@@ -544,7 +550,53 @@ public final class WarehouseBooth {
                 }
                 case 1043 -> photo(mc, "17-index-far-tooltip");
                 case 1045 -> mc.player.closeContainer();
-                case 1050 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // The bag at a managed table through EMI (D-0015, Backpacks+ D-0033): a worn
+                // Backpacks+ bag holds the only sticks, the chests the cobblestone. EMI counts the
+                // bag's cells through the handler behind the warehouse's, and a stone pickaxe fills
+                // from both.
+                case 1050 -> server(mc, p -> {
+                    var bag = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("backpacksplus:basic_backpack"));
+                    check(bag != Items.AIR, "Backpacks+'s basic bag is registered");
+                    var inventory = p.getInventory();
+                    inventory.clearContent();
+                    p.setItemSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, new ItemStack(bag));
+                    // A full inventory, so the give lands in the bag's cells; then emptied again.
+                    for (int i = 0; i < inventory.items.size(); i++) inventory.items.set(i, new ItemStack(Items.BEDROCK));
+                    var sticks = new ItemStack(Items.STICK, 2);
+                    com.chunkworks.carried.api.Carried.give(p, sticks);
+                    for (int i = 0; i < inventory.items.size(); i++) inventory.items.set(i, ItemStack.EMPTY);
+                    check(sticks.isEmpty() && com.chunkworks.carried.api.Carried.count(p, Items.STICK) == 2
+                            && com.chunkworks.carried.api.Carried.find(p, s -> s.is(Items.STICK), true) != null, "two sticks in the worn bag, the inventory empty");
+                    p.teleportTo(p.serverLevel(), 0.5, 100, 2.2, 0, 15);
+                });
+                // The table opens once the client has the bag: the server sends the chest slot with
+                // the inventory's own menu, which it syncs only while no other menu is open.
+                case 1090 -> {
+                    check(mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).getItem() != Items.AIR, "the client wears the bag: " + mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST));
+                    server(mc, p -> p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))));
+                }
+                case 1120 -> {
+                    check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "the table is open with the bag worn");
+                    int menu = mc.player.containerMenu.containerId;
+                    int tallied = Pooled.Tally.snapshot(menu).getOrDefault(Items.STICK, 0);
+                    long counted = 0;
+                    for (var stack : dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).inventory.values()) if (stack.getKey() == Items.STICK) counted += stack.getAmount();
+                    check(Pooled.Tally.covers(menu) && counted == 2 + tallied, "EMI counts the bag's two sticks beside the building's " + tallied + " at the managed table: " + counted);
+                    var recipe = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("stone_pickaxe"));
+                    check(recipe != null && dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).canCraft(recipe), "EMI counts a stone pickaxe from the bag's sticks and the chests' cobblestone");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.registry.EmiRecipeFiller.getFirstValidHandler(recipe, screen) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "EMI fills the pickaxe through the warehouse handler");
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the stone pickaxe is accepted");
+                }
+                case 1125 -> {
+                    int cobblestone = 0, sticks = 0;
+                    for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (s.is(Items.COBBLESTONE)) cobblestone += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
+                    check(cobblestone == 3 && sticks == 2, "the grid holds three cobblestone and two sticks: " + cobblestone + " and " + sticks);
+                    server(mc, p -> check(com.chunkworks.carried.api.Carried.count(p, Items.STICK) == 0, "the sticks came out of the bag"));
+                    photo(mc, "18-emi-fill-from-bag");
+                    mc.player.closeContainer();
+                }
+                case 1130 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }

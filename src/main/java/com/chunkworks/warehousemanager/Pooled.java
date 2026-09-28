@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 Rusty Shackleford and nfx. SPDX-License-Identifier: AGPL-3.0-or-later */
 package com.chunkworks.warehousemanager;
 
+import com.chunkworks.carried.api.Carried;
 import com.chunkworks.warehousemanager.domain.Access;
 import com.chunkworks.warehousemanager.domain.Expansion;
 import com.chunkworks.warehousemanager.domain.Pooling;
@@ -350,14 +351,16 @@ public final class Pooled {
         LOG.info("pooled step {}: made {} craft(s) ({} × {}) from {}", rule.id(), made, made * rule.yield(), rule.result(), drawn);
         return made;
     }
-    /** effects: one of each pick taken out of the player's inventory, then the grid, as stacks of
-     * one, in the picks' order; or null with nothing taken when one is not there. */
+    /** effects: one of each pick taken out of the player's inventory, then the grid, then the bags
+     * they carry (Carried, D-0015), as stacks of one, in the picks' order; or null with nothing
+     * taken when one is not there. */
     private static List<ItemStack> take(ServerPlayer player, CraftingMenu menu, List<String> picks) {
         var out = new ArrayList<ItemStack>(picks.size());
         for (var pick : picks) {
             ItemStack taken = null;
             for (var s : player.getInventory().items) if (!s.isEmpty() && key(s.getItem()).equals(pick)) { taken = s.split(1); break; }
             if (taken == null) for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty() && key(s.getItem()).equals(pick)) { taken = s.split(1); menu.getSlot(i).setChanged(); break; } }
+            if (taken == null) { var stored = Carried.draw(player, s -> key(s.getItem()).equals(pick), 1, true); if (!stored.isEmpty()) taken = stored; }
             if (taken == null) { for (var s : out) give(player, s); return null; }
             out.add(taken);
         }
@@ -373,14 +376,18 @@ public final class Pooled {
         if (recipe instanceof ShapedRecipe shaped) return CraftingInput.of(shaped.getWidth(), shaped.getHeight(), items);
         return CraftingInput.of(items.size(), 1, items);
     }
-    /** effects: the stack into the player's inventory, dropped at their feet when it does not fit. */
+    /** effects: the stack where a give goes, the bags the player carries included (Carried,
+     * D-0015), dropped at their feet when it does not fit. */
     private static void give(ServerPlayer player, ItemStack stack) {
-        if (!player.getInventory().add(stack) && !stack.isEmpty()) player.drop(stack, false);
+        Carried.giveOrDrop(player, stack);
     }
-    /** effects: item counts over the player's inventory and the grid. */
+    /** effects: item counts over the player's inventory, the grid and the bags they carry: what
+     * vanilla's placement can take from once Carried counts the bags (Carried D-0004), the offhand
+     * aside as vanilla leaves it. */
     public static Map<String, Integer> held(ServerPlayer player, CraftingMenu menu) {
         var held = new HashMap<String, Integer>();
         for (var s : player.getInventory().items) if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum);
+        Carried.forEachStored(player, (store, cell, s) -> held.merge(key(s.getItem()), s.getCount(), Integer::sum));
         for (int i = 1; i <= menu.getGridWidth() * menu.getGridHeight(); i++) { var s = menu.getSlot(i).getItem(); if (!s.isEmpty()) held.merge(key(s.getItem()), s.getCount(), Integer::sum); }
         return held;
     }
@@ -417,14 +424,14 @@ public final class Pooled {
     public static String key(Item item) { return BuiltInRegistries.ITEM.getKey(item).toString(); }
     public static Item item(String id) { return BuiltInRegistries.ITEM.get(ResourceLocation.parse(id)); }
     /** effects: moves up to {@code count} of the item from the chests of the owner's warehouses in
-     * reach into the player's inventory, those holding the most giving first (D-0014), inside each
+     * reach to the player where a give goes, their bags included (D-0015), those holding the most giving first (D-0014), inside each
      * the chests nearest its manager first; stops when the inventory is full; returns whether any
      * moved. */
     private static boolean draw(ServerPlayer player, ManagerBlockEntity m, String itemId, int count) {
         var item = item(itemId);
         return Network.take(Network.sites(m), s -> s.is(item), count, false, stack -> {
             int offered = stack.getCount();
-            player.getInventory().add(stack);
+            Carried.give(player, stack);
             return offered - stack.getCount();
         }) > 0;
     }

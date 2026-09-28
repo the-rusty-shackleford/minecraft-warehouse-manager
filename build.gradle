@@ -7,6 +7,7 @@ group = 'com.chunkworks.warehousemanager'
 base { archivesName = 'warehousemanager' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 repositories {
+    mavenLocal { content { includeGroup 'com.chunkworks.carried' } }
     mavenCentral()
     // EMI (recipe viewer): the optional plugin compiles against it; the booth and GameTests run it.
     maven { url = 'https://maven.terraformersmc.com/releases/'; content { includeGroup 'dev.emi' } }
@@ -79,7 +80,20 @@ neoForge {
 neoForge.runs.matching { !(it.name in ['gameTestServer', 'photoBooth']) }.configureEach {
     loadedMods = neoForge.mods.matching { it.name != 'warehousemanager_gametest' }
 }
+// The gametest run's classpath gets main's dependencies (Carried among them) as well as its classes.
+configurations { gametestImplementation.extendsFrom implementation }
 dependencies {
+    // Carried (D-0015): the pooled fill counts, takes and gives what the player carries, their bags
+    // included. Nested, as every consumer nests it; `./gradlew publishToMavenLocal` in
+    // minecraft-carried first.
+    jarJar(implementation('com.chunkworks.carried:carried')) {
+        version {
+            strictly '[1.0,2.0)'
+            prefer '1.0.0'
+        }
+    }
+    // Backpacks+ on the gametest server only, so the fill is proven against a real bag.
+    gametestRuntimeOnly files('../minecraft-backpacks-plus/build/libs/backpacksplus-0.6.0.jar')
     implementation sourceSets.domain.output
     gametestImplementation sourceSets.main.output
     gametestImplementation sourceSets.domain.output

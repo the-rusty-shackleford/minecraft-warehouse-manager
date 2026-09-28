@@ -39,9 +39,11 @@ import java.util.*;
  * nothing else references it. */
 @EmiEntrypoint
 public final class WarehouseEmiPlugin implements EmiPlugin {
-    /** effects: registers the handler for the crafting table and moves it ahead of EMI's own,
-     * since EMI asks the first handler of a menu type for the screen's inventory and the first
-     * that supports a recipe to fill it, and the registry only appends. */
+    /** effects: registers the handler for the crafting table and moves it to the front of EMI's
+     * list, since EMI asks the first handler of a menu type for the screen's inventory and the
+     * first that supports a recipe to fill it, and the registry only appends. Backpacks+ stands
+     * its table handler just ahead of EMI's own, so it ends up behind this one whichever
+     * registers first, and this one counts its bag cells (D-0015). */
     @Override public void register(EmiRegistry registry) {
         var handler = new PooledCraftingHandler();
         registry.addRecipeHandler(MenuType.CRAFTING, handler);
@@ -55,12 +57,29 @@ public final class WarehouseEmiPlugin implements EmiPlugin {
     /** The vanilla crafting table with the building's containers counted in. For a table the
      * server did not report as managed it behaves exactly like EMI's own handler. */
     public static final class PooledCraftingHandler implements StandardRecipeHandler<CraftingMenu> {
-        /** effects: the inventory and hotbar slots, then the grid: what EMI may move from. */
+        /** effects: what EMI may count and move from: the input slots of the handler behind this
+         * one in EMI's list for the table, which are a worn bag's cells too when Backpacks+'s stands
+         * there (D-0015); with none behind, the inventory and hotbar slots, then the grid. */
         @Override public List<Slot> getInputSources(CraftingMenu menu) {
+            var behind = behind();
+            if (behind != null) return behind.getInputSources(menu);
             var slots = new ArrayList<Slot>();
             for (int i = 10; i < 46; i++) slots.add(menu.getSlot(i));
             for (int i = 1; i < 10; i++) slots.add(menu.getSlot(i));
             return slots;
+        }
+        /** effects: the first standard handler after this one in EMI's list for the crafting table
+         * (Backpacks+'s, then EMI's own), or null when there is none. */
+        @SuppressWarnings("unchecked")
+        private StandardRecipeHandler<CraftingMenu> behind() {
+            var handlers = EmiRecipeFiller.handlers.get(MenuType.CRAFTING);
+            if (handlers == null) return null;
+            boolean past = false;
+            for (var handler : handlers) {
+                if (handler == this) past = true;
+                else if (past && handler instanceof StandardRecipeHandler<?> standard) return (StandardRecipeHandler<CraftingMenu>) standard;
+            }
+            return null;
         }
         @Override public List<Slot> getCraftingSlots(CraftingMenu menu) {
             var slots = new ArrayList<Slot>();

@@ -18,3 +18,4 @@ Rationales are append-only. Supersede with a new decision.
 | [D-0012](D-0012.md) | Accepted | A part the building could make at the table counts as available, the full tree down, crafting recipes only, and the fill makes the parts first (Rusty's rifle from receivers from steel) |
 | [D-0013](D-0013.md) | Accepted | Nothing being made is spent on its own ingredients, from the chests or by making it, at any depth; the planner is told the recipe's result (Rusty's ingot made from nuggets broken from ingots) |
 | [D-0014](D-0014.md) | Accepted | One owner's warehouses are one network: automatic by ownership, balanced deposits and levelling draws, far warehouses loaded (full, not ticking) only while the network is in use, one roster per owner (Rusty's villages far apart) |
+| [D-0015](D-0015.md) | Accepted | The pooled fill counts, takes and gives what the player carries through Carried, their bags included, as vanilla's placement now does |
