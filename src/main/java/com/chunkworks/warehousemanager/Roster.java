@@ -16,7 +16,8 @@ import java.util.*;
 
 /** The trust panel's wire: the server lists every player this world has seen, marking who is
  * online and who is trusted, for the player who opened a manager; the owner's clicks come back
- * one toggle at a time and the server answers each with a fresh listing. */
+ * one toggle at a time and the server answers each with a fresh listing. The roster is the
+ * owner's, one for all their warehouses (D-0014): a toggle at any of them applies at all. */
 public final class Roster {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("Warehouse Manager");
     private Roster() {}
@@ -24,21 +25,23 @@ public final class Roster {
     /** One row of the panel. */
     public record Entry(UUID id, String name, boolean online, boolean trusted) {}
     /** The panel's contents for one open manager menu. {@code editable} is whether the viewer may
-     * toggle rows; {@code owned} false means nobody has claimed the manager yet. */
-    public record Listing(int containerId, String ownerName, boolean owned, boolean editable, List<Entry> entries) implements CustomPacketPayload {
+     * toggle rows; {@code owned} false means nobody has claimed the manager yet; {@code
+     * warehouses} is how many warehouses the owner's one roster covers (D-0014). */
+    public record Listing(int containerId, String ownerName, boolean owned, boolean editable, int warehouses, List<Entry> entries) implements CustomPacketPayload {
         public static final Type<Listing> TYPE = new Type<>(WarehouseManager.id("roster"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Listing> CODEC = StreamCodec.of((buf, l) -> {
-            buf.writeVarInt(l.containerId()); buf.writeUtf(l.ownerName()); buf.writeBoolean(l.owned()); buf.writeBoolean(l.editable());
+            buf.writeVarInt(l.containerId()); buf.writeUtf(l.ownerName()); buf.writeBoolean(l.owned()); buf.writeBoolean(l.editable()); buf.writeVarInt(l.warehouses());
             buf.writeVarInt(l.entries().size());
             for (var e : l.entries()) { buf.writeUUID(e.id()); buf.writeUtf(e.name()); buf.writeBoolean(e.online()); buf.writeBoolean(e.trusted()); }
         }, buf -> {
             int id = buf.readVarInt();
             var owner = buf.readUtf();
             boolean owned = buf.readBoolean(), editable = buf.readBoolean();
+            int warehouses = buf.readVarInt();
             int n = buf.readVarInt();
             var entries = new ArrayList<Entry>(n);
             for (int i = 0; i < n; i++) entries.add(new Entry(buf.readUUID(), buf.readUtf(), buf.readBoolean(), buf.readBoolean()));
-            return new Listing(id, owner, owned, editable, entries);
+            return new Listing(id, owner, owned, editable, warehouses, entries);
         });
         public Listing { entries = List.copyOf(entries); }
         @Override public Type<Listing> type() { return TYPE; }
@@ -75,11 +78,11 @@ public final class Roster {
             }
             entries.sort(Comparator.comparing((Entry e) -> !e.online()).thenComparing(e -> e.name().toLowerCase(Locale.ROOT)));
         }
-        var listing = new Listing(containerId, m.ownerName(), ownership.owned(), m.permits(player, Access.Action.MANAGE_TRUST), entries);
+        var listing = new Listing(containerId, m.ownerName(), ownership.owned(), m.permits(player, Access.Action.MANAGE_TRUST), m.linked() + 1, entries);
         PacketDistributor.sendToPlayer(player, listing);
     }
     /** effects: every player this world has seen, by name: those with a player-data file, those
-     * online, and those on the manager's roster; names from the online player, else the server's
+     * online, and those on the owner's roster; names from the online player, else the server's
      * profile cache, else the roster's memory, else the id's first digits. */
     static Map<UUID, String> seen(MinecraftServer server, ManagerBlockEntity m) {
         var out = new HashMap<UUID, String>();

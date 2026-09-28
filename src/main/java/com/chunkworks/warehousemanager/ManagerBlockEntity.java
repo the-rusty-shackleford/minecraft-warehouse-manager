@@ -4,6 +4,8 @@ package com.chunkworks.warehousemanager;
 import com.chunkworks.warehousemanager.domain.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.GlobalPos;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenCustomHashMap;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.level.block.Block;
@@ -11,7 +13,6 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -37,15 +38,22 @@ import java.util.*;
  * <p>AF: {@code units} are the claimed containers of the last scan, nearest first; {@code plan}
  * is the current assignment; {@code labels} the last assignment kept for stickiness; the cursor
  * pair is the next slot to inspect; {@code settled} is whether a whole pass found nothing to move;
- * {@code ownership} is who claimed the manager and whom they trust (D-0006), {@code ownerName}
- * and {@code names} the last names seen for them, since names change.
+ * {@code owner} is who claimed the manager (D-0006), {@code ownerName} the last name seen for
+ * them, since names change; whom they trust is their one roster in the {@link Network} (D-0014),
+ * and {@code legacyRoster} a roster this block saved before 0.6.0, waiting to be folded into it.
+ * {@code sites} is the owner's network as reachable at {@code sitesAt}, {@code held} what each of
+ * those sites holds by kind (built on first need), {@code full} the "site/leaf" pairs a deposit
+ * found without room since; all three are dropped together at most a second later.
  * <p>RI: 0 <= unitCursor <= units.size(); plan is empty or covers every unit id; fill is non-null
- * only while a scan is running; ownerName is empty exactly while unowned. */
+ * only while a scan is running; ownerName is empty exactly while owner is null; held is null or
+ * parallel to sites. */
 public final class ManagerBlockEntity extends BlockEntity {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("Warehouse Manager");
     /** One managed container: its slots may span two blocks (a double chest). */
     public record Unit(String id, BlockPos primary, List<BlockPos> positions) {
         public Unit { positions = List.copyOf(positions); }
+        /** effects: the unit whose primary block is the given one, named by it. */
+        public static Unit of(BlockPos primary, List<BlockPos> positions) { return new Unit(ManagerBlockEntity.id(primary), primary, positions); }
     }
     /** A free floor cell against a wall where a container could stand, facing into the room. */
     public record Spot(BlockPos pos, Direction facing) {}
@@ -66,9 +74,13 @@ public final class ManagerBlockEntity extends BlockEntity {
     private String waitingNode;
     private boolean settled, scanned, registered;
     private BlockPos min, max;
-    private Access.Ownership ownership = Access.Ownership.NONE;
+    private UUID owner;
     private String ownerName = "";
-    private final Map<UUID, String> names = new HashMap<>();
+    private Map<UUID, String> legacyRoster;
+    private List<Network.Site> sites = List.of();
+    private long sitesAt = Long.MIN_VALUE;
+    private List<Object2IntOpenCustomHashMap<ItemStack>> held;
+    private final Set<String> full = new HashSet<>();
 
     public ManagerBlockEntity(BlockPos pos, BlockState state) {
         super(WarehouseManager.BLOCK_ENTITY.get(), pos, state);
@@ -100,62 +112,102 @@ public final class ManagerBlockEntity extends BlockEntity {
     }
     /** effects: schedules a rescan within two ticks unless one is running. */
     public void rescanSoon() { if (fill == null) rescanIn = Math.min(rescanIn, 2); }
-    /** effects: unregisters and drops every claim; the block is gone. */
-    public void release() { Managers.remove(this); Managers.releaseClaims(this); registered = false; }
-    /** effects: unregisters; the claims stand, since the chunk unloading takes this path too. */
+    /** effects: unregisters, drops every claim and leaves the owner's network; the block is gone. */
+    public void release() {
+        Managers.remove(this); Managers.releaseClaims(this); registered = false;
+        if (level instanceof ServerLevel sl) Network.of(sl.getServer()).leave(GlobalPos.of(sl.dimension(), worldPosition));
+    }
+    /** effects: unregisters; the claims and the network membership stand, since the chunk
+     * unloading takes this path too. */
     @Override public void setRemoved() { super.setRemoved(); Managers.remove(this); registered = false; }
+    /** effects: folds a roster this block saved before 0.6.0 into its owner's one roster, once per
+     * manager (D-0014). */
+    @Override public void onLoad() {
+        super.onLoad();
+        if (legacyRoster != null && owner != null && level instanceof ServerLevel sl)
+            Network.of(sl.getServer()).fold(owner, GlobalPos.of(sl.dimension(), worldPosition), legacyRoster);
+        legacyRoster = null;
+    }
 
-    /** effects: who owns this manager and whom they trust. */
-    public Access.Ownership ownership() { return ownership; }
+    /** effects: who owns this manager and whom they trust: the owner's one roster (D-0014). */
+    public Access.Ownership ownership() {
+        if (owner == null) return Access.Ownership.NONE;
+        if (level instanceof ServerLevel sl) return Network.of(sl.getServer()).ownership(owner);
+        return Access.Ownership.NONE.claimedBy(owner);
+    }
+    /** effects: the owner, or null while unowned. */
+    public UUID owner() { return owner; }
     /** effects: the owner's last-known name, empty while unowned. */
     public String ownerName() { return ownerName; }
-    /** effects: the last name seen for a player on the roster, or null. */
-    public String nameOf(UUID id) { return names.get(id); }
+    /** effects: the last name seen for a player on the owner's roster, or null. */
+    public String nameOf(UUID id) { return owner != null && level instanceof ServerLevel sl ? Network.of(sl.getServer()).nameOf(owner, id) : null; }
     /** effects: whether the player may take the action here, counting the operator bypass. */
-    public boolean permits(Player player, Access.Action action) { return Access.permits(ownership, player.getUUID(), action, Guard.bypass(player)); }
-    /** effects: makes the player the owner of an unowned manager; returns whether it did. */
+    public boolean permits(Player player, Access.Action action) { return Access.permits(ownership(), player.getUUID(), action, Guard.bypass(player)); }
+    /** effects: makes the player the owner of an unowned manager, which joins their network;
+     * returns whether it did. */
     public boolean claim(ServerPlayer player) { return claim(player.getUUID(), player.getScoreboardName()); }
     public boolean claim(UUID who, String name) {
-        if (ownership.owned()) return false;
-        ownership = ownership.claimedBy(who);
+        if (owner != null) return false;
+        owner = who;
         ownerName = name;
         setChanged();
         LOG.info("{} claimed the warehouse at {}", name, worldPosition.toShortString());
+        if (level instanceof ServerLevel sl) joinNetwork(sl);
         return true;
     }
-    /** requires: owned; effects: puts the player on or off the roster, remembering the name. */
+    /** requires: owned, on the server; effects: puts the player on or off the owner's roster,
+     * remembering the name, for every warehouse the owner has (D-0014). */
     public void trust(UUID who, String name, boolean trusted) {
-        ownership = trusted ? ownership.trusting(who) : ownership.distrusting(who);
-        if (trusted) names.put(who, name); else names.remove(who);
-        setChanged();
+        if (owner == null) throw new IllegalStateException("unowned");
+        Network.of(((ServerLevel) level).getServer()).trust(owner, who, name, trusted);
+    }
+    /** effects: records this manager in its owner's network as its last scan saw it; nothing
+     * while unowned. */
+    private void joinNetwork(ServerLevel sl) {
+        if (owner == null) return;
+        Network.of(sl.getServer()).join(owner, new Network.Member(GlobalPos.of(sl.dimension(), worldPosition), units, plan.routes()));
+        sitesAt = Long.MIN_VALUE;
+    }
+    /** effects: how many other warehouses share this one's network. */
+    public int linked() {
+        return owner != null && level instanceof ServerLevel sl ? Math.max(0, Network.of(sl.getServer()).size(owner) - 1) : 0;
+    }
+    /** effects: this manager's network as reachable now, remembered for a second so a deposit
+     * per tick does not look it up again (D-0014). */
+    List<Network.Site> sites(ServerLevel sl) {
+        long now = sl.getGameTime();
+        if (sitesAt == Long.MIN_VALUE || now - sitesAt >= Index.REFRESH_TICKS || now < sitesAt) {
+            sites = Network.sites(this); sitesAt = now; held = null; full.clear();
+        }
+        return sites;
     }
 
     /** effects: opens the buffer with the trust panel for a player the owner trusts and shows a
      * one-line status on the action bar; a stranger sees only whose warehouse it is. */
     public void open(ServerPlayer player) {
         if (!permits(player, Access.Action.OPEN_MANAGER)) { player.displayClientMessage(Guard.refusal("warehousemanager.refuse.open", this), true); return; }
-        if (player.getUUID().equals(ownership.owner())) ownerName = player.getScoreboardName();
+        if (player.getUUID().equals(owner)) ownerName = player.getScoreboardName();
+        Network.touch(this);
         var id = player.openMenu(new SimpleMenuProvider((cid, inv, p) -> new ManagerMenu(cid, inv, this), TITLE));
         if (id.isPresent()) { Roster.send(player, this, id.getAsInt()); Index.send(player, this, id.getAsInt()); }
         player.displayClientMessage(status(), true);
     }
     /** effects: takes up to {@code amount} items of the kind (same item and components) out of the
-     * building, the chests nearest first and then the buffer; returns what was taken, empty when
+     * owner's warehouses in reach, those holding the most giving first (D-0014), inside each the
+     * chests nearest its manager first and then its buffer; returns what was taken, empty when
      * none was there. */
     public ItemStack pull(ItemStack kind, int amount) {
-        int taken = 0;
-        for (var c : Index.containers(this)) for (int i = 0; i < c.getContainerSize() && taken < amount; i++) {
-            var s = c.getItem(i);
-            if (s.isEmpty() || !ItemStack.isSameItemSameComponents(s, kind)) continue;
-            int n = Math.min(amount - taken, s.getCount());
-            s.shrink(n);
-            if (s.isEmpty()) c.setItem(i, ItemStack.EMPTY); else c.setChanged();
-            taken += n;
-        }
+        int taken = Network.take(Network.sites(this), s -> ItemStack.isSameItemSameComponents(s, kind), amount, true, ItemStack::getCount);
         return taken == 0 ? ItemStack.EMPTY : kind.copyWithCount(taken);
     }
-    /** effects: a status line for the action bar. */
+    /** effects: a status line for the action bar, naming how many other warehouses this one is
+     * linked with when there are any. */
     public Component status() {
+        var line = statusLine();
+        int linked = linked();
+        return linked == 0 ? line : line.copy().append(Component.translatable(linked == 1 ? "warehousemanager.status.linked.one" : "warehousemanager.status.linked", linked));
+    }
+    private Component statusLine() {
         if (fill != null) return Component.translatable("warehousemanager.status.scanning");
         if (noWall) return Component.translatable("warehousemanager.status.nowall");
         if (units.isEmpty()) return Component.translatable("warehousemanager.status.none");
@@ -172,6 +224,7 @@ public final class ManagerBlockEntity extends BlockEntity {
         if (!(level instanceof ServerLevel sl)) return;
         if (!registered) { Managers.add(this); registered = true; }
         Index.refresh(this, sl);
+        Pooled.refresh(this, sl);
         if (fill != null) { if (fill.step(CELLS_PER_TICK)) finishScan(sl); return; }
         if (--rescanIn <= 0) { startScan(sl); return; }
         if (furnish(sl)) return;
@@ -259,6 +312,8 @@ public final class ManagerBlockEntity extends BlockEntity {
         label(sl);
         // With nothing claimed there is nothing to sort: a manager in an empty room is settled.
         scanned = true; settled = units.isEmpty(); unitCursor = 0; slotCursor = 0; movesThisPass = 0;
+        sitesAt = Long.MIN_VALUE;
+        joinNetwork(sl);
         setChanged();
     }
 
@@ -405,13 +460,57 @@ public final class ManagerBlockEntity extends BlockEntity {
             var s = buffer.getItem(i);
             if (s.isEmpty()) continue;
             if (moves >= MOVES_PER_TICK) { stuck++; continue; }
-            var route = plan.routes().get(Facts.leaf(s));
-            int moved = route == null ? 0 : moveTo(sl, s, route, null);
+            var leaf = Facts.leaf(s);
+            var route = plan.routes().get(leaf);
+            int moved = deposit(sl, s, leaf, route);
             if (moved > 0) { moves++; if (s.isEmpty()) buffer.setItem(i, ItemStack.EMPTY); else buffer.setChanged(); }
             if (!s.isEmpty()) { stuck++; if (stuckNode == null && route != null && !route.isEmpty()) stuckNode = labels.get(route.get(0)); }
         }
         waiting = stuck; waitingNode = stuckNode;
         return moves;
+    }
+
+    /** effects: moves the stack out of the buffer into the owner's warehouse in reach that holds
+     * the least of its kind and has room for its group, then the next (D-0014: over time every kind
+     * is split about evenly), this building on a tie; alone, into this building's route as ever.
+     * Returns how many items moved. */
+    private int deposit(ServerLevel sl, ItemStack stack, String leaf, List<String> route) {
+        var sites = sites(sl);
+        if (sites.size() == 1) return route == null ? 0 : moveTo(sl, stack, route, null);
+        if (held == null) {
+            held = new ArrayList<>(sites.size());
+            for (var site : sites) { var h = Network.kinds(); Network.count(site.containers(false), h); held.add(h); }
+        }
+        var kind = stack.copyWithCount(1);
+        var ws = new ArrayList<Spread.Warehouse>(sites.size());
+        for (int i = 0; i < sites.size(); i++) {
+            var site = sites.get(i);
+            var r = site.here() ? route : site.routes().get(leaf);
+            ws.add(new Spread.Warehouse(i, site.here(), site.distance(sites.get(0)), held.get(i).getInt(kind), r != null && !r.isEmpty() && !full.contains(i + "/" + leaf)));
+        }
+        int moved = 0;
+        for (int i : Spread.depositOrder(ws)) {
+            var site = sites.get(i);
+            int n = site.here() ? moveTo(sl, stack, route, null) : moveFar(site, stack, site.routes().get(leaf));
+            if (n > 0) { moved += n; held.get(i).addTo(kind, n); }
+            if (stack.isEmpty()) break;
+            full.add(i + "/" + leaf);
+        }
+        return moved;
+    }
+    /** effects: inserts the stack into a far site's containers for its leaf, in the route's order,
+     * skipping containers not loaded, gone or open to a player; returns how many items moved. */
+    private static int moveFar(Network.Site site, ItemStack stack, List<String> route) {
+        int moved = 0;
+        for (var id : route) {
+            if (stack.isEmpty()) break;
+            var u = site.unit(id);
+            if (u == null) continue;
+            var c = site.container(u);
+            if (c == null || busy(site.level(), u)) continue;
+            moved += Transfer.insert(stack, c);
+        }
+        return moved;
     }
 
     /** effects: inspects up to a budget of container slots from the cursor, moving misplaced stacks
@@ -459,13 +558,16 @@ public final class ManagerBlockEntity extends BlockEntity {
         return null;
     }
     /** effects: the unit's live container, or null when its block is gone. */
-    public Container container(Level lvl, Unit u) {
+    public Container container(Level lvl, Unit u) { return containerAt(lvl, u); }
+    /** requires: the unit's chunks are loaded, or the caller accepts loading them; effects: the
+     * unit's live container, or null when its block is gone. */
+    static Container containerAt(Level lvl, Unit u) {
         var state = lvl.getBlockState(u.primary());
         if (state.getBlock() instanceof ChestBlock chest) return ChestBlock.getContainer(chest, state, lvl, u.primary(), true);
         return lvl.getBlockEntity(u.primary()) instanceof Container c && state.is(WarehouseManager.MANAGED) ? c : null;
     }
     /** effects: whether a player has the container open, so its contents are left alone. */
-    private static boolean busy(Level lvl, Unit u) {
+    static boolean busy(Level lvl, Unit u) {
         for (var p : u.positions()) {
             var state = lvl.getBlockState(p);
             if (state.hasProperty(BarrelBlock.OPEN) && state.getValue(BarrelBlock.OPEN)) return true;
@@ -480,17 +582,9 @@ public final class ManagerBlockEntity extends BlockEntity {
         var l = new CompoundTag();
         labels.forEach(l::putString);
         tag.put("Labels", l);
-        if (ownership.owned()) {
-            tag.putUUID("Owner", ownership.owner());
+        if (owner != null) {
+            tag.putUUID("Owner", owner);
             tag.putString("OwnerName", ownerName);
-            var roster = new ListTag();
-            for (var id : ownership.trusted()) {
-                var entry = new CompoundTag();
-                entry.putUUID("Id", id);
-                entry.putString("Name", names.getOrDefault(id, ""));
-                roster.add(entry);
-            }
-            tag.put("Trusted", roster);
         }
     }
     @Override protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
@@ -499,18 +593,20 @@ public final class ManagerBlockEntity extends BlockEntity {
         labels = new HashMap<>();
         var l = tag.getCompound("Labels");
         for (var k : l.getAllKeys()) labels.put(k, l.getString(k));
-        ownership = Access.Ownership.NONE;
+        owner = null;
         ownerName = "";
-        names.clear();
+        legacyRoster = null;
         if (tag.hasUUID("Owner")) {
-            ownership = ownership.claimedBy(tag.getUUID("Owner"));
+            owner = tag.getUUID("Owner");
             ownerName = tag.getString("OwnerName");
+            // Before 0.6.0 each manager kept its own roster; it is folded into the owner's one
+            // roster when the block is loaded into its level (D-0014).
             var roster = tag.getList("Trusted", Tag.TAG_COMPOUND);
             for (int i = 0; i < roster.size(); i++) {
                 var entry = roster.getCompound(i);
-                if (!entry.hasUUID("Id") || entry.getUUID("Id").equals(ownership.owner())) continue;
-                ownership = ownership.trusting(entry.getUUID("Id"));
-                names.put(entry.getUUID("Id"), entry.getString("Name"));
+                if (!entry.hasUUID("Id") || entry.getUUID("Id").equals(owner)) continue;
+                if (legacyRoster == null) legacyRoster = new LinkedHashMap<>();
+                legacyRoster.put(entry.getUUID("Id"), entry.getString("Name"));
             }
         }
         rescanIn = 20;

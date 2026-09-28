@@ -40,11 +40,15 @@ import java.util.function.Consumer;
  * manager, photographed after it settles: the row of labelled chests, one sign up close, the
  * double chest's two signs, the block itself, and its chest screen; then the recipe book and
  * EMI drawing from the chests, the furnished hut, the trust panel before and after a click, and
- * a stranger's refusal at nfx's hut. Screenshots need a human eye; this fixture never ships. */
+ * a stranger's refusal at nfx's hut; then a second warehouse 2,048 blocks east, unloaded, coming
+ * into reach while a table is open, its copper filling a grid, and the index's breakdown of what
+ * each warehouse holds (D-0014). Screenshots need a human eye; this fixture never ships. */
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
 public final class WarehouseBooth {
     private static final Logger LOG = LoggerFactory.getLogger("Warehouse Manager booth");
     private static final BlockPos MANAGER = new BlockPos(0, 100, 5), HUT_MANAGER = new BlockPos(16, 100, -2), TABLE = new BlockPos(3, 100, 3);
+    private static final BlockPos FAR_MANAGER = new BlockPos(2052, 100, 4), FAR_CHEST = new BlockPos(2055, 100, 5);
+    private static final net.minecraft.world.level.ChunkPos FAR_CHUNK = new net.minecraft.world.level.ChunkPos(FAR_MANAGER);
     private static final UUID NFX = UUID.nameUUIDFromBytes("nfx".getBytes(StandardCharsets.UTF_8)), JDRUM = UUID.nameUUIDFromBytes("Jdrum12".getBytes(StandardCharsets.UTF_8));
     private static int tick;
     private static boolean emiFilled;
@@ -457,7 +461,90 @@ public final class WarehouseBooth {
                     photo(mc, "14-emi-fill-rifle");
                 }
                 case 821 -> { if (net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) mc.player.closeContainer(); }
-                case 830 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                // The network (D-0014): a second warehouse of the booth player's, 2,048 blocks east,
+                // built with its chunk forced, then let go until it unloads. A table opened in the
+                // room counts only the room at first; the network's ticket brings the far chest in
+                // within a second, the tally is sent again, and the book and EMI light a copper
+                // block whose nine ingots are only in the far chest. EMI's fill draws them from there.
+                case 830 -> server(mc, p -> {
+                    var l = p.serverLevel();
+                    check(!Pooled.tally((ManagerBlockEntity) l.getBlockEntity(MANAGER)).containsKey(Items.COPPER_INGOT), "the room holds no copper of its own");
+                    l.setChunkForced(FAR_CHUNK.x, FAR_CHUNK.z, true);
+                    for (int x = 2050; x <= 2057; x++) for (int y = 99; y <= 103; y++) for (int z = 2; z <= 9; z++) {
+                        boolean shell = x == 2050 || x == 2057 || y == 99 || y == 103 || z == 2 || z == 9;
+                        l.setBlock(new BlockPos(x, y, z), (shell ? Blocks.STONE : Blocks.AIR).defaultBlockState(), 3);
+                    }
+                    var west = Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.WEST);
+                    l.setBlock(FAR_CHEST, west, 3);
+                    var c = ChestBlock.getContainer((ChestBlock) west.getBlock(), west, l, FAR_CHEST, true);
+                    c.setItem(0, new ItemStack(Items.COBBLESTONE, 40)); c.setItem(1, new ItemStack(Items.COPPER_INGOT, 9));
+                    l.setBlock(FAR_MANAGER, WarehouseManager.BLOCK.get().defaultBlockState(), 3);
+                    check(((ManagerBlockEntity) l.getBlockEntity(FAR_MANAGER)).claim(p), "the booth player owns the far warehouse too");
+                    p.awardRecipes(java.util.List.of(p.server.getRecipeManager().byKey(net.minecraft.resources.ResourceLocation.withDefaultNamespace("copper_block")).orElseThrow()));
+                });
+                case 900 -> server(mc, p -> {
+                    var l = p.serverLevel();
+                    var far = (ManagerBlockEntity) l.getBlockEntity(FAR_MANAGER);
+                    check(far.settled() && far.units().size() == 1, "the far manager holds its chest");
+                    check(Network.of(p.server).size(p.getUUID()) == 2, "both warehouses are the booth player's network");
+                    l.setChunkForced(FAR_CHUNK.x, FAR_CHUNK.z, false);
+                });
+                case 960 -> server(mc, p -> {
+                    var l = p.serverLevel();
+                    check(l.getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) == null, "the far chunk unloaded once let go");
+                    var room = (ManagerBlockEntity) l.getBlockEntity(MANAGER);
+                    check(Network.sites(room).size() == 1 && !Pooled.tally(room).containsKey(Items.COPPER_INGOT), "out of reach, the room alone counts, and no copper");
+                    p.getInventory().clearContent();
+                    p.teleportTo(l, 0.5, 100, 2.2, 0, 15);
+                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(l, TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting")));
+                    // The first tally went out inside openMenu. Checked here, in the same server
+                    // tick, since the far chunk can arrive and a second tally follow before the
+                    // client's next few ticks (48 ms once its data is cached).
+                    check(Network.sites(room).size() == 1, "the table opened, and its first tally went out, with the room alone in reach");
+                });
+                case 963 -> check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "the table is open");
+                case 1005 -> {
+                    int menu = mc.player.containerMenu.containerId;
+                    check(Pooled.Tally.snapshot(menu).getOrDefault(Items.COPPER_INGOT, 0) == 9, "a second tally, sent when the far warehouse came into reach, counts its nine copper: " + Pooled.Tally.describe());
+                    server(mc, p -> check(!p.serverLevel().shouldTickBlocksAt(FAR_CHUNK.toLong()) && p.serverLevel().getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) != null, "the far chunk is loaded and not ticking"));
+                    var copper = mc.player.getRecipeBook().getCollections().stream().filter(c -> c.getRecipes().stream().anyMatch(r -> r.id().getPath().equals("copper_block"))).findFirst().orElseThrow();
+                    check(copper.hasCraftable(), "the vanilla book lights the copper block");
+                    var recipe = dev.emi.emi.api.EmiApi.getRecipeManager().getRecipe(net.minecraft.resources.ResourceLocation.withDefaultNamespace("copper_block"));
+                    check(recipe != null && dev.emi.emi.api.recipe.EmiPlayerInventory.of(mc.player).canCraft(recipe), "EMI counts the far copper for a block");
+                    photo(mc, "15-book-far-copper");
+                    @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
+                    check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the copper block is accepted");
+                }
+                case 1010 -> {
+                    int copper = 0;
+                    for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.COPPER_INGOT)) copper += mc.player.containerMenu.getSlot(i).getItem().getCount();
+                    check(copper == 9, "nine copper in the grid from the far chest, got " + copper);
+                    server(mc, p -> {
+                        var l = p.serverLevel();
+                        var state = l.getBlockState(FAR_CHEST);
+                        var c = ChestBlock.getContainer((ChestBlock) state.getBlock(), state, l, FAR_CHEST, true);
+                        int left = 0;
+                        for (int i = 0; i < c.getContainerSize(); i++) if (c.getItem(i).is(Items.COPPER_INGOT)) left += c.getItem(i).getCount();
+                        check(left == 0, "the far chest gave its copper, " + left + " left");
+                    });
+                    photo(mc, "16-emi-fill-from-far");
+                    mc.player.closeContainer();
+                }
+                case 1015 -> server(mc, p -> { p.getInventory().clearContent(); ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p); });
+                case 1040 -> {
+                    check(mc.screen instanceof ManagerScreen, "the room's manager screen is open");
+                    var screen = (ManagerScreen) mc.screen;
+                    var key = "minecraft:cobblestone#" + net.minecraft.core.component.DataComponentPatch.EMPTY.hashCode();
+                    var shares = screen.shares(key);
+                    check(shares.size() == 2 && shares.get(0).here() && shares.get(0).count() == 64 && !shares.get(1).here() && shares.get(1).count() == 40
+                            && shares.get(1).x() == FAR_MANAGER.getX() && shares.get(1).z() == FAR_MANAGER.getZ(), "cobblestone: 64 here and 40 at the far manager: " + shares);
+                    var at = screen.cellCentre(key);
+                    check(at != null, "the cobblestone cell is on screen");
+                    hover(mc, at[0], at[1]);
+                }
+                case 1043 -> photo(mc, "17-index-far-tooltip");
+                case 1045 -> mc.player.closeContainer();
+                case 1050 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }
@@ -535,6 +622,17 @@ public final class WarehouseBooth {
     private static void server(Minecraft mc, Consumer<ServerPlayer> action) {
         var server = mc.getSingleplayerServer(); var id = mc.player.getUUID();
         server.execute(() -> { try { action.accept(server.getPlayerList().getPlayer(id)); } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.execute(mc::stop); } });
+    }
+    /** effects: puts the mouse where the game reads it over the gui point, so the screen draws
+     * its hover there; the booth's window gets no real mouse motion to undo it. */
+    private static void hover(Minecraft mc, int guiX, int guiY) {
+        try {
+            double scale = mc.getWindow().getGuiScale();
+            var x = net.minecraft.client.MouseHandler.class.getDeclaredField("xpos");
+            var y = net.minecraft.client.MouseHandler.class.getDeclaredField("ypos");
+            x.setAccessible(true); y.setAccessible(true);
+            x.setDouble(mc.mouseHandler, guiX * scale); y.setDouble(mc.mouseHandler, guiY * scale);
+        } catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
     }
     private static void photo(Minecraft mc, String name) {
         mc.getToasts().clear();

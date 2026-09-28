@@ -24,8 +24,17 @@ public final class Index {
     static final int REFRESH_TICKS = 20;
     private Index() {}
 
-    /** One kind in the warehouse: a stack of one, how many there are, the heading it sits under. */
-    public record Row(ItemStack kind, int count, String group) {}
+    /** How many of a kind one warehouse of the network holds: the one open ({@code here}) or
+     * another, named by its manager's x and z and, outside the overworld, its dimension ({@code
+     * dimension} empty in the overworld). */
+    public record Share(boolean here, int x, int z, String dimension, int count) {}
+    /** One kind in the warehouse: a stack of one, how many there are, the heading it sits under,
+     * and, when the owner has more than one warehouse in reach, how many each holds (D-0014),
+     * this one first; empty otherwise. */
+    public record Row(ItemStack kind, int count, String group, List<Share> shares) {
+        public Row { shares = List.copyOf(shares); }
+        public Row(ItemStack kind, int count, String group) { this(kind, count, group, List.of()); }
+    }
     /** The index for one open manager menu: the headings in the taxonomy's order, then the rows. */
     public record Listing(int containerId, List<String> groups, List<Row> rows) implements CustomPacketPayload {
         public static final Type<Listing> TYPE = new Type<>(WarehouseManager.id("index"));
@@ -34,7 +43,11 @@ public final class Index {
             buf.writeVarInt(l.groups().size());
             for (var g : l.groups()) buf.writeUtf(g);
             buf.writeVarInt(l.rows().size());
-            for (var r : l.rows()) { ItemStack.STREAM_CODEC.encode(buf, r.kind()); buf.writeVarInt(r.count()); buf.writeUtf(r.group()); }
+            for (var r : l.rows()) {
+                ItemStack.STREAM_CODEC.encode(buf, r.kind()); buf.writeVarInt(r.count()); buf.writeUtf(r.group());
+                buf.writeVarInt(r.shares().size());
+                for (var s : r.shares()) { buf.writeBoolean(s.here()); buf.writeVarInt(s.x()); buf.writeVarInt(s.z()); buf.writeUtf(s.dimension()); buf.writeVarInt(s.count()); }
+            }
         }, buf -> {
             int id = buf.readVarInt();
             int g = buf.readVarInt();
@@ -42,7 +55,15 @@ public final class Index {
             for (int i = 0; i < g; i++) groups.add(buf.readUtf());
             int n = buf.readVarInt();
             var rows = new ArrayList<Row>(n);
-            for (int i = 0; i < n; i++) rows.add(new Row(ItemStack.STREAM_CODEC.decode(buf), buf.readVarInt(), buf.readUtf()));
+            for (int i = 0; i < n; i++) {
+                var kind = ItemStack.STREAM_CODEC.decode(buf);
+                int count = buf.readVarInt();
+                var group = buf.readUtf();
+                int k = buf.readVarInt();
+                var shares = new ArrayList<Share>(k);
+                for (int j = 0; j < k; j++) shares.add(new Share(buf.readBoolean(), buf.readVarInt(), buf.readVarInt(), buf.readUtf(), buf.readVarInt()));
+                rows.add(new Row(kind, count, group, shares));
+            }
             return new Listing(id, groups, rows);
         });
         public Listing { groups = List.copyOf(groups); rows = List.copyOf(rows); }
@@ -80,45 +101,58 @@ public final class Index {
         for (var leaf : Taxonomy.STANDARD.leaves()) { var g = group(leaf); if (!out.contains(g)) out.add(g); }
         return List.copyOf(out);
     }
-    /** effects: the building's contents by kind (item and components), chests then the buffer,
-     * each with its total and heading; unordered (the client orders). */
+    /** effects: the contents by kind (item and components) of every warehouse of the owner's
+     * network in reach, this one first (D-0014), chests and buffers, each kind with its total, its
+     * heading and, when more than one warehouse is in reach, what each holds; unordered (the
+     * client orders). */
     public static List<Row> tally(ManagerBlockEntity m) {
-        var kinds = new ArrayList<ItemStack>();
-        var counts = new ArrayList<Integer>();
-        for (var c : containers(m)) for (int i = 0; i < c.getContainerSize(); i++) {
-            var s = c.getItem(i);
-            if (s.isEmpty()) continue;
-            int at = -1;
-            for (int k = 0; k < kinds.size(); k++) if (ItemStack.isSameItemSameComponents(kinds.get(k), s)) { at = k; break; }
-            if (at < 0) { kinds.add(s.copyWithCount(1)); counts.add(s.getCount()); }
-            else counts.set(at, counts.get(at) + s.getCount());
+        var sites = Network.sites(m);
+        var total = Network.kinds();
+        var each = new ArrayList<it.unimi.dsi.fastutil.objects.Object2IntOpenCustomHashMap<ItemStack>>(sites.size());
+        for (var site : sites) {
+            var h = Network.kinds();
+            Network.count(site.containers(true), h);
+            each.add(h);
+            for (var e : h.object2IntEntrySet()) total.addTo(e.getKey(), e.getIntValue());
         }
-        var rows = new ArrayList<Row>(kinds.size());
-        for (int k = 0; k < kinds.size(); k++) rows.add(new Row(kinds.get(k), counts.get(k), group(kinds.get(k))));
+        var rows = new ArrayList<Row>(total.size());
+        for (var e : total.object2IntEntrySet()) {
+            var shares = new ArrayList<Share>();
+            if (sites.size() > 1) for (int i = 0; i < sites.size(); i++) {
+                int n = each.get(i).getInt(e.getKey());
+                if (n == 0) continue;
+                var site = sites.get(i);
+                var dim = site.level().dimension().location();
+                shares.add(new Share(site.here(), site.manager().getX(), site.manager().getZ(), dim.getPath().equals("overworld") ? "" : dim.toString(), n));
+            }
+            rows.add(new Row(e.getKey(), e.getIntValue(), group(e.getKey()), shares));
+        }
         return rows;
     }
-    /** effects: the manager's live containers nearest first, then its buffer. */
+    /** effects: the live containers of every warehouse of the owner's network in reach, this one
+     * first: each one's chests nearest its manager first, then its buffer. */
     static List<Container> containers(ManagerBlockEntity m) {
         var out = new ArrayList<Container>();
-        for (var u : m.units()) { var c = m.container(m.getLevel(), u); if (c != null) out.add(c); }
-        out.add(m.buffer());
+        for (var site : Network.sites(m)) out.addAll(site.containers(true));
         return out;
     }
-    /** effects: how many of the kind the building holds. */
-    static int count(ManagerBlockEntity m, ItemStack kind) {
-        int n = 0;
-        for (var c : containers(m)) for (int i = 0; i < c.getContainerSize(); i++) { var s = c.getItem(i); if (!s.isEmpty() && ItemStack.isSameItemSameComponents(s, kind)) n += s.getCount(); }
-        return n;
-    }
+    /** effects: how many of the kind the owner's warehouses in reach hold. */
+    static int count(ManagerBlockEntity m, ItemStack kind) { return Network.count(containers(m), s -> ItemStack.isSameItemSameComponents(s, kind)); }
     /** effects: sends the player the index for the manager menu they have open. */
     public static void send(ServerPlayer player, ManagerBlockEntity m, int containerId) {
         PacketDistributor.sendToPlayer(player, new Listing(containerId, groups(), tally(m)));
     }
     /** effects: re-sends the index to every player with this manager open, every
-     * {@link #REFRESH_TICKS}, so what others take by hand shows within a second. */
+     * {@link #REFRESH_TICKS}, so what others take by hand shows within a second, and while anyone
+     * has it open keeps the owner's other warehouses loaded (D-0014), so a far warehouse's stock
+     * arrives within a second of opening. */
     static void refresh(ManagerBlockEntity m, ServerLevel level) {
         if (level.getGameTime() % REFRESH_TICKS != 0) return;
-        for (var p : level.players()) if (p.containerMenu instanceof ManagerMenu menu && menu.manager() == m) send(p, m, menu.containerId);
+        boolean open = false;
+        for (var p : level.players()) if (p.containerMenu instanceof ManagerMenu menu && menu.manager() == m) {
+            if (!open) { Network.touch(m); open = true; }
+            send(p, m, menu.containerId);
+        }
     }
     /** effects: answers a click on an entry for the sender's open manager menu: lifts a stack or
      * half onto the cursor or sends one to the inventory when the cursor is empty and the manager

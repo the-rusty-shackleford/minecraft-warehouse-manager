@@ -7,6 +7,7 @@ import com.chunkworks.warehousemanager.domain.Pooling;
 import com.chunkworks.warehousemanager.mixin.CraftingMenuAccessor;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -14,6 +15,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.StackedContents;
@@ -95,14 +97,13 @@ public final class Pooled {
     static ManagerBlockEntity managerFor(CraftingMenu menu) {
         return ((CraftingMenuAccessor) menu).warehousemanager$access().evaluate((level, pos) -> Optional.ofNullable(Managers.covering(level, pos))).flatMap(o -> o).orElse(null);
     }
-    /** effects: item counts over every container the manager holds. */
-    public static Map<Item, Integer> tally(ManagerBlockEntity m) {
+    /** effects: item counts over the chests of every warehouse of the manager's owner in reach,
+     * this one first (D-0014). */
+    public static Map<Item, Integer> tally(ManagerBlockEntity m) { return tally(Network.sites(m)); }
+    private static Map<Item, Integer> tally(List<Network.Site> sites) {
         var out = new HashMap<Item, Integer>();
-        for (var u : m.units()) {
-            var c = m.container(m.getLevel(), u);
-            if (c == null) continue;
+        for (var site : sites) for (var c : site.containers(false))
             for (int i = 0; i < c.getContainerSize(); i++) { var s = c.getItem(i); if (!s.isEmpty()) out.merge(s.getItem(), s.getCount(), Integer::sum); }
-        }
         return out;
     }
     /** effects: sends the player the building's tally for the crafting table they just opened, when
@@ -110,12 +111,39 @@ public final class Pooled {
     public static void opened(PlayerContainerEvent.Open event) {
         if (event.getEntity() instanceof ServerPlayer player && event.getContainer() instanceof CraftingMenu menu) send(player, menu);
     }
+    /** What was last sent to each player at a table: the menu and which warehouses were in reach,
+     * so a tally is re-sent when a far warehouse comes into reach (D-0014) and not otherwise. */
+    private record Sent(int containerId, List<BlockPos> sites) {}
+    private static final Map<UUID, Sent> SENT = new HashMap<>();
     static void send(ServerPlayer player, CraftingMenu menu) {
         var m = managerFor(menu);
         if (m == null || !m.permits(player, Access.Action.SEE_STOCK)) return;
-        var counts = tally(m);
-        LOG.info("{} opened a table in the building at {}: sending {} kinds", player.getScoreboardName(), m.getBlockPos().toShortString(), counts.size());
+        Network.touch(m);
+        send(player, menu, m, Network.sites(m));
+    }
+    private static void send(ServerPlayer player, CraftingMenu menu, ManagerBlockEntity m, List<Network.Site> sites) {
+        var counts = tally(sites);
+        var reach = new ArrayList<BlockPos>(sites.size());
+        for (var s : sites) reach.add(s.manager());
+        synchronized (SENT) { SENT.put(player.getUUID(), new Sent(menu.containerId, reach)); }
+        LOG.info("{} opened a table in the building at {}: sending {} kinds from {} warehouse(s)", player.getScoreboardName(), m.getBlockPos().toShortString(), counts.size(), sites.size());
         PacketDistributor.sendToPlayer(player, new Contents(menu.containerId, counts));
+    }
+    /** effects: once a second, for every player the manager lets see its stock who has a table in
+     * its building open: keeps the owner's other warehouses loaded, and sends a fresh tally when
+     * the warehouses in reach are not those the last tally counted. */
+    static void refresh(ManagerBlockEntity m, ServerLevel level) {
+        if (level.getGameTime() % Index.REFRESH_TICKS != 0 || m.owner() == null) return;
+        for (var p : level.players()) {
+            if (!(p.containerMenu instanceof CraftingMenu menu) || managerFor(menu) != m || !m.permits(p, Access.Action.SEE_STOCK)) continue;
+            Network.touch(m);
+            var sites = Network.sites(m);
+            Sent last;
+            synchronized (SENT) { last = SENT.get(p.getUUID()); }
+            boolean same = last != null && last.containerId() == menu.containerId && last.sites().size() == sites.size();
+            for (int i = 0; same && i < sites.size(); i++) same = last.sites().get(i).equals(sites.get(i).manager());
+            if (!same) send(p, menu, m, sites);
+        }
     }
 
     // The rule book: what the table can make, read off the recipe manager once per recipe set.
@@ -388,28 +416,16 @@ public final class Pooled {
     }
     public static String key(Item item) { return BuiltInRegistries.ITEM.getKey(item).toString(); }
     public static Item item(String id) { return BuiltInRegistries.ITEM.get(ResourceLocation.parse(id)); }
-    /** effects: moves up to {@code count} of the item from the building's containers, nearest
-     * first, into the player's inventory; stops when the inventory is full; returns whether any
+    /** effects: moves up to {@code count} of the item from the chests of the owner's warehouses in
+     * reach into the player's inventory, those holding the most giving first (D-0014), inside each
+     * the chests nearest its manager first; stops when the inventory is full; returns whether any
      * moved. */
     private static boolean draw(ServerPlayer player, ManagerBlockEntity m, String itemId, int count) {
-        boolean moved = false;
-        for (var u : m.units()) {
-            var c = m.container(m.getLevel(), u);
-            if (c == null) continue;
-            for (int i = 0; i < c.getContainerSize() && count > 0; i++) {
-                var s = c.getItem(i);
-                if (s.isEmpty() || !key(s.getItem()).equals(itemId)) continue;
-                int take = Math.min(count, s.getCount());
-                var stack = s.copyWithCount(take);
-                player.getInventory().add(stack);
-                int added = take - stack.getCount();
-                if (added == 0) return moved;
-                s.shrink(added);
-                if (s.isEmpty()) c.setItem(i, ItemStack.EMPTY); else c.setChanged();
-                count -= added; moved = true;
-            }
-            if (count <= 0) break;
-        }
-        return moved;
+        var item = item(itemId);
+        return Network.take(Network.sites(m), s -> s.is(item), count, false, stack -> {
+            int offered = stack.getCount();
+            player.getInventory().add(stack);
+            return offered - stack.getCount();
+        }) > 0;
     }
 }

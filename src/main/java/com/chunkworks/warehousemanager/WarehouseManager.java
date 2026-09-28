@@ -63,7 +63,7 @@ public final class WarehouseManager {
         NeoForge.EVENT_BUS.addListener(Guard::detonate);
         NeoForge.EVENT_BUS.addListener(Pooled::opened);
         bus.addListener((RegisterPayloadHandlersEvent e) -> {
-            var registrar = e.registrar("2");
+            var registrar = e.registrar("3");
             registrar.playToClient(Pooled.Contents.TYPE, Pooled.Contents.CODEC, (p, ctx) -> Pooled.Tally.set(p.containerId(), p.counts()));
             registrar.playToClient(Roster.Listing.TYPE, Roster.Listing.CODEC, (p, ctx) -> Roster.Client.set(p));
             registrar.playToServer(Roster.Trust.TYPE, Roster.Trust.CODEC, (p, ctx) -> { if (ctx.player() instanceof ServerPlayer player) Roster.toggle(player, p); });

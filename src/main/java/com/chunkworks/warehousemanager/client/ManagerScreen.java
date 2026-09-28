@@ -23,8 +23,9 @@ import java.util.*;
  * a search box in the title row, the Insert slot under it, the player's inventory below, and
  * the trust panel beside it all (D-0006, D-0009). A click on an entry behaves like a chest slot:
  * left lifts a stack onto the cursor, right half, shift sends one to the inventory, and a loaded
- * cursor puts its stack into the warehouse. Everything the grid shows comes from the listing
- * the server sends; this only paints and forwards clicks. */
+ * cursor puts its stack into the warehouse. With the owner's other warehouses in reach the grid
+ * counts them too, and a cell's tooltip says what each holds (D-0014). Everything the grid shows
+ * comes from the listing the server sends; this only paints and forwards clicks. */
 public final class ManagerScreen extends AbstractContainerScreen<ManagerMenu> {
     private static final ResourceLocation SLOT = ResourceLocation.withDefaultNamespace("container/slot"),
             SCROLLER = ResourceLocation.withDefaultNamespace("container/creative_inventory/scroller"),
@@ -41,6 +42,7 @@ public final class ManagerScreen extends AbstractContainerScreen<ManagerMenu> {
     private String shownQuery = "";
     private List<com.chunkworks.warehousemanager.domain.Index.Row> rows = List.of();
     private final Map<String, ItemStack> kinds = new HashMap<>();
+    private final Map<String, List<Index.Share>> shares = new HashMap<>();
     private final List<Cell> cells = new ArrayList<>();
 
     public ManagerScreen(ManagerMenu menu, Inventory inventory, Component title) {
@@ -69,10 +71,24 @@ public final class ManagerScreen extends AbstractContainerScreen<ManagerMenu> {
         if (cell != null && menu.getCarried().isEmpty()) {
             var stack = kinds.get(cell.entry().kind());
             var lines = new ArrayList<>(stack.getTooltipLines(Item.TooltipContext.of(minecraft.level), minecraft.player, minecraft.options.advancedItemTooltips ? TooltipFlag.ADVANCED : TooltipFlag.NORMAL));
-            lines.add(Component.translatable("warehousemanager.index.count", cell.entry().count()).withStyle(net.minecraft.ChatFormatting.GRAY));
+            var shares = shares(cell.entry().kind());
+            if (shares.isEmpty()) lines.add(Component.translatable("warehousemanager.index.count", cell.entry().count()).withStyle(net.minecraft.ChatFormatting.GRAY));
+            else {
+                lines.add(Component.translatable("warehousemanager.index.count.network", cell.entry().count()).withStyle(net.minecraft.ChatFormatting.GRAY));
+                for (var share : shares) lines.add(share(share).withStyle(net.minecraft.ChatFormatting.GRAY));
+            }
             lines.add(Component.literal(cell.entry().group()).withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
             g.renderTooltip(font, lines, Optional.empty(), stack, mouseX, mouseY);
         }
+    }
+    /** effects: where the owner's warehouses hold the kind, this one first, or empty when the
+     * listing counts one warehouse (D-0014). */
+    public List<Index.Share> shares(String kindKey) { return shares.getOrDefault(kindKey, List.of()); }
+    /** effects: "12 here" or "28 at 3120, -840" (with the dimension outside the overworld). */
+    private static net.minecraft.network.chat.MutableComponent share(Index.Share s) {
+        if (s.here()) return Component.translatable("warehousemanager.index.share.here", s.count());
+        if (s.dimension().isEmpty()) return Component.translatable("warehousemanager.index.share.at", s.count(), s.x(), s.z());
+        return Component.translatable("warehousemanager.index.share.in", s.count(), s.x(), s.z(), s.dimension());
     }
     /** effects: rebuilds the ordered, filtered rows when the listing or the query changed. */
     private void refresh() {
@@ -81,10 +97,12 @@ public final class ManagerScreen extends AbstractContainerScreen<ManagerMenu> {
         if (listing == shown && query.equals(shownQuery)) return;
         shown = listing; shownQuery = query;
         kinds.clear();
+        shares.clear();
         var entries = new ArrayList<com.chunkworks.warehousemanager.domain.Index.Entry>();
         if (listing != null) for (var r : listing.rows()) {
             var key = BuiltInRegistries.ITEM.getKey(r.kind().getItem()) + "#" + r.kind().getComponentsPatch().hashCode();
             kinds.put(key, r.kind());
+            if (!r.shares().isEmpty()) shares.put(key, r.shares());
             var e = new com.chunkworks.warehousemanager.domain.Index.Entry(key, r.kind().getHoverName().getString(), BuiltInRegistries.ITEM.getKey(r.kind().getItem()).getNamespace(), r.group(), r.count());
             if (com.chunkworks.warehousemanager.domain.Index.matches(e, query)) entries.add(e);
         }
@@ -209,7 +227,9 @@ public final class ManagerScreen extends AbstractContainerScreen<ManagerMenu> {
     private Component hint(Roster.Listing listing) {
         if (listing == null) return Component.empty();
         if (!listing.owned()) return Component.translatable("warehousemanager.roster.hint.claim");
-        return Component.translatable(listing.editable() ? "warehousemanager.roster.hint.editable" : "warehousemanager.roster.hint.readonly");
+        if (!listing.editable()) return Component.translatable("warehousemanager.roster.hint.readonly");
+        return listing.warehouses() > 1 ? Component.translatable("warehousemanager.roster.hint.editable.network", listing.warehouses())
+                : Component.translatable("warehousemanager.roster.hint.editable");
     }
     private int header() { return PAD + 11 + 9 * font.split(hint(listing()), INNER).size() + 3; }
     private void panel(GuiGraphics g, int mouseX, int mouseY) {

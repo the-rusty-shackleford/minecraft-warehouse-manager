@@ -978,4 +978,205 @@ public final class WarehouseGameTests {
             h.assertTrue(second.settled() && second.units().size() == 1, "the second manager claims the freed chest");
         });
     }
+
+    // The network (D-0014): a second warehouse of the same owner, far away.
+    /** A test's far warehouse: 2,048 blocks east of the test, near a chunk's corner so its room
+     * stands in that one chunk. */
+    private record Far(BlockPos manager, BlockPos chest, net.minecraft.world.level.ChunkPos chunk) {}
+    private static Far far(GameTestHelper h) {
+        var o = h.absolutePos(BlockPos.ZERO);
+        var chunk = new net.minecraft.world.level.ChunkPos((o.getX() + 2048) >> 4, o.getZ() >> 4);
+        int x = chunk.getMinBlockX() + 4, y = o.getY() + 2, z = chunk.getMinBlockZ() + 4;
+        return new Far(new BlockPos(x, y, z), new BlockPos(x + 3, y, z + 1), chunk);
+    }
+    private static Container farChest(GameTestHelper h, Far f) {
+        var state = h.getLevel().getBlockState(f.chest());
+        return ChestBlock.getContainer((ChestBlock) state.getBlock(), state, h.getLevel(), f.chest(), true);
+    }
+    private static boolean farLoaded(GameTestHelper h, Far f) { return h.getLevel().getChunkSource().getChunkNow(f.chunk().x, f.chunk().z) != null; }
+    private static int farCount(GameTestHelper h, Far f, Item item) { var out = new HashMap<Item, Integer>(); count(farChest(h, f), out); return out.getOrDefault(item, 0); }
+    /** effects: with the far chunk forced, a roofed stone room there holding a chest of the items
+     * and a manager owned by the owner; returns that manager. */
+    private static ManagerBlockEntity buildFar(GameTestHelper h, Far f, ServerPlayer owner, Object... items) {
+        var level = h.getLevel();
+        level.setChunkForced(f.chunk().x, f.chunk().z, true);
+        int x = f.manager().getX(), y = f.manager().getY(), z = f.manager().getZ();
+        for (int dx = -2; dx <= 5; dx++) for (int dy = -1; dy <= 3; dy++) for (int dz = -2; dz <= 5; dz++) {
+            boolean wall = dx == -2 || dx == 5 || dy == -1 || dy == 3 || dz == -2 || dz == 5;
+            level.setBlock(new BlockPos(x + dx, y + dy, z + dz), (wall ? Blocks.STONE : Blocks.AIR).defaultBlockState(), 3);
+        }
+        level.setBlock(f.chest(), chest(Direction.WEST, ChestType.SINGLE), 3);
+        fill(farChest(h, f), items);
+        level.setBlock(f.manager(), WarehouseManager.BLOCK.get().defaultBlockState(), 3);
+        var m = (ManagerBlockEntity) Objects.requireNonNull(level.getBlockEntity(f.manager()));
+        m.claim(owner);
+        return m;
+    }
+    /** effects: the near shell with one chest of the items and a manager the owner owns. */
+    private static void buildNear(GameTestHelper h, ServerPlayer owner, Object... items) {
+        shell(h);
+        h.setBlock(CHEST, chest(Direction.WEST, ChestType.SINGLE));
+        fill(chestAt(h, CHEST), items);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        manager(h).claim(owner);
+    }
+    /** effects: the sequence continued until both warehouses have scanned into the owner's
+     * network, the far chunk has been let go and unloaded, and the network's ticket alone has
+     * brought it back, loaded but not ticking. */
+    private static GameTestSequence farInReach(GameTestHelper h, Far f, ServerPlayer owner, ManagerBlockEntity farManager) {
+        var level = h.getLevel();
+        return h.startSequence()
+                .thenWaitUntil(() -> {
+                    h.assertTrue(manager(h).settled() && manager(h).units().size() == 1, "the near manager holds its chest");
+                    h.assertTrue(farManager.settled() && farManager.units().size() == 1, "the far manager holds its chest");
+                    h.assertTrue(Network.of(level.getServer()).size(owner.getUUID()) == 2, "both are in the owner's network");
+                })
+                .thenExecute(() -> level.setChunkForced(f.chunk().x, f.chunk().z, false))
+                .thenWaitUntil(() -> h.assertTrue(!farLoaded(h, f), "the far chunk unloads once let go"))
+                .thenExecute(() -> {
+                    h.assertTrue(total(manager(h), Items.OAK_LOG) == 0, "a far warehouse not loaded counts nothing");
+                    h.assertTrue(!farLoaded(h, f), "and counting it loaded nothing");
+                    h.assertTrue(Network.sites(manager(h)).size() == 1, "only the near warehouse is in reach");
+                    Network.touch(manager(h));
+                })
+                .thenWaitUntil(() -> h.assertTrue(farLoaded(h, f), "the network's ticket loads the far chunk"))
+                .thenExecute(() -> h.assertTrue(!level.shouldTickBlocksAt(f.chunk().toLong()), "loaded as a full chunk that does not tick"));
+    }
+
+    /** D-0014: a far warehouse of the same owner, unloaded, counts nothing and nothing loads it;
+     * the network's ticket brings it back without ticking, and the index then counts it, with a
+     * breakdown of what each warehouse holds. */
+    @GameTest(template = "house", timeoutTicks = 1200, skyAccess = true) public void aFarWarehouseComesIntoReachWhenTheNetworkIsUsed(GameTestHelper h) {
+        var owner = mock(h, CHEST.west());
+        buildNear(h, owner, Items.COBBLESTONE, 10);
+        var f = far(h);
+        var farManager = buildFar(h, f, owner, Items.COBBLESTONE, 30, Items.OAK_LOG, 8);
+        farInReach(h, f, owner, farManager).thenExecute(() -> {
+            var near = h.absolutePos(MANAGER);
+            var rows = Index.tally(manager(h));
+            var cobble = rows.stream().filter(r -> r.kind().is(Items.COBBLESTONE)).findFirst().orElseThrow();
+            h.assertTrue(cobble.count() == 40, "cobblestone counts both warehouses: " + cobble);
+            h.assertTrue(cobble.shares().equals(List.of(new Index.Share(true, near.getX(), near.getZ(), "", 10), new Index.Share(false, f.manager().getX(), f.manager().getZ(), "", 30))),
+                    "here first, then the far one by its manager's x and z: " + cobble.shares());
+            var logs = rows.stream().filter(r -> r.kind().is(Items.OAK_LOG)).findFirst().orElseThrow();
+            h.assertTrue(logs.count() == 8 && logs.shares().size() == 1 && !logs.shares().get(0).here(), "the logs only the far warehouse holds: " + logs);
+            h.assertTrue(manager(h).linked() == 1, "the near manager is linked with one other");
+            h.setBlock(MANAGER, Blocks.AIR);
+            h.getLevel().setBlock(f.manager(), Blocks.AIR.defaultBlockState(), 3);
+            h.assertTrue(Network.of(h.getLevel().getServer()).size(owner.getUUID()) == 0, "broken managers leave the network");
+        }).thenSucceed();
+    }
+
+    /** D-0014: taking from the index levels the warehouses from the fullest down; a table in the
+     * near building fills from a chest only the far warehouse holds; a deposit goes to the
+     * warehouse holding the least of its kind, and stays here on a tie. */
+    @GameTest(template = "house", timeoutTicks = 1400, skyAccess = true) public void drawsAndDepositsLevelTheWarehouses(GameTestHelper h) {
+        var owner = mock(h, CHEST.west());
+        buildNear(h, owner, Items.COBBLESTONE, 10, Items.SAND, 20);
+        h.setBlock(TABLE, Blocks.CRAFTING_TABLE);
+        var f = far(h);
+        var farManager = buildFar(h, f, owner, Items.COBBLESTONE, 30, Items.OAK_LOG, 8);
+        farInReach(h, f, owner, farManager)
+                // A second passes so the near manager's remembered view of its network includes
+                // the far warehouse before anything is deposited.
+                .thenIdle(21)
+                .thenExecute(() -> {
+                    var menu = new ManagerMenu(31, owner.getInventory(), manager(h));
+                    owner.containerMenu = menu;
+                    Index.pick(owner, new Index.Pick(31, new ItemStack(Items.COBBLESTONE), false, false));
+                    h.assertTrue(menu.getCarried().is(Items.COBBLESTONE) && menu.getCarried().getCount() == 20, "right lifts half of forty: " + menu.getCarried());
+                    h.assertTrue(farCount(h, f, Items.COBBLESTONE) == 10 && census(h, CHEST).getOrDefault(Items.COBBLESTONE, 0) == 10,
+                            "the far thirty gave twenty, levelling it with the near ten: far " + farCount(h, f, Items.COBBLESTONE) + " near " + census(h, CHEST));
+                    menu.setCarried(ItemStack.EMPTY);
+
+                    var table = tableMenu(h, owner, 32);
+                    var planks = h.getLevel().getServer().getRecipeManager().byKey(ResourceLocation.withDefaultNamespace("oak_planks")).orElseThrow();
+                    table.handlePlacement(false, planks, owner);
+                    int logs = 0;
+                    for (int i = 1; i <= 9; i++) if (table.getSlot(i).getItem().is(Items.OAK_LOG)) logs += table.getSlot(i).getItem().getCount();
+                    h.assertTrue(logs == 1 && farCount(h, f, Items.OAK_LOG) == 7, "the near table drew a log from the far chest: grid " + logs + " far " + farCount(h, f, Items.OAK_LOG));
+                    table.removed(owner);
+
+                    menu = new ManagerMenu(33, owner.getInventory(), manager(h));
+                    owner.containerMenu = menu;
+                    menu.slots.get(ManagerMenu.INSERT).set(new ItemStack(Items.SAND, 5));
+                })
+                .thenWaitUntil(() -> h.assertTrue(farCount(h, f, Items.SAND) == 5, "sand, twenty here and none there, is deposited there: far " + farCount(h, f, Items.SAND)))
+                .thenExecute(() -> {
+                    h.assertTrue(census(h, CHEST).getOrDefault(Items.SAND, 0) == 20, "none of it here");
+                    ((ManagerMenu) owner.containerMenu).slots.get(ManagerMenu.INSERT).set(new ItemStack(Items.COBBLESTONE, 4));
+                })
+                .thenWaitUntil(() -> h.assertTrue(census(h, CHEST).getOrDefault(Items.COBBLESTONE, 0) == 14, "cobblestone, ten each, stays here on the tie: near " + census(h, CHEST)))
+                .thenExecute(() -> {
+                    h.assertTrue(farCount(h, f, Items.COBBLESTONE) == 10, "and none went there");
+                    owner.containerMenu = owner.inventoryMenu;
+                    h.setBlock(MANAGER, Blocks.AIR);
+                    h.getLevel().setBlock(f.manager(), Blocks.AIR.defaultBlockState(), 3);
+                })
+                .thenSucceed();
+    }
+    private static Map<Item, Integer> census(GameTestHelper h, BlockPos chest) { var out = new HashMap<Item, Integer>(); count(chestAt(h, chest), out); return out; }
+
+    /** D-0014: the owner keeps one roster: trusting a player at the far manager lets them draw at
+     * the near one, withdrawing it from the near manager's panel refuses them at the far one's
+     * chests, and both managers answer with the one ownership. */
+    @GameTest(template = "house", timeoutTicks = 600, skyAccess = true) public void oneRosterCoversEveryWarehouse(GameTestHelper h) {
+        var owner = mock(h, CHEST.west());
+        var friend = mock(h, CHEST.west());
+        buildNear(h, owner, Items.COBBLESTONE, 10);
+        var f = far(h);
+        var farManager = buildFar(h, f, owner, Items.OAK_LOG, 8);
+        h.startSequence()
+                .thenWaitUntil(() -> h.assertTrue(farManager.settled() && Network.of(h.getLevel().getServer()).size(owner.getUUID()) == 2, "both in the network"))
+                .thenExecute(() -> {
+                    var near = manager(h);
+                    h.assertTrue(!near.permits(friend, Access.Action.DRAW) && !farManager.permits(friend, Access.Action.OPEN_CONTAINER), "a stranger to both");
+                    farManager.trust(friend.getUUID(), "friend", true);
+                    h.assertTrue(near.permits(friend, Access.Action.DRAW), "trusted at the far manager, drawing at the near one");
+                    h.assertTrue(near.ownership() == farManager.ownership(), "one ownership for both");
+                    var menu = new ManagerMenu(41, owner.getInventory(), near);
+                    owner.containerMenu = menu;
+                    Roster.toggle(owner, new Roster.Trust(41, friend.getUUID(), false));
+                    h.assertTrue(!farManager.permits(friend, Access.Action.OPEN_CONTAINER), "withdrawn from the near panel, refused at the far chests");
+                    h.assertTrue(near.status().getString().contains("Linked with 1 other warehouse"), "the status names the link: " + near.status().getString());
+                    owner.containerMenu = owner.inventoryMenu;
+                    h.getLevel().setBlock(f.manager(), Blocks.AIR.defaultBlockState(), 3);
+                    h.assertTrue(near.linked() == 0 && Network.of(h.getLevel().getServer()).size(owner.getUUID()) == 1, "the far manager broken leaves one");
+                    h.getLevel().setChunkForced(f.chunk().x, f.chunk().z, false);
+                    h.setBlock(MANAGER, Blocks.AIR);
+                })
+                .thenSucceed();
+    }
+
+    /** D-0014: a roster a manager saved before 0.6.0 folds into its owner's one roster when the
+     * block loads, once: a player the owner withdraws afterwards is not trusted again by the old
+     * copy loading a second time, and the block saves no roster of its own. */
+    @GameTest(template = "house", timeoutTicks = 200, skyAccess = true) public void aRosterFromBeforeTheNetworkFoldsOnce(GameTestHelper h) {
+        shell(h);
+        h.setBlock(MANAGER, WarehouseManager.BLOCK.get());
+        var m = manager(h);
+        var registries = h.getLevel().registryAccess();
+        var owner = UUID.randomUUID();
+        var friend = mock(h, CHEST.west());
+        var old = m.saveWithoutMetadata(registries);
+        old.putUUID("Owner", owner);
+        old.putString("OwnerName", "someone");
+        var roster = new net.minecraft.nbt.ListTag();
+        var entry = new net.minecraft.nbt.CompoundTag();
+        entry.putUUID("Id", friend.getUUID());
+        entry.putString("Name", "friend");
+        roster.add(entry);
+        old.put("Trusted", roster);
+        m.loadWithComponents(old, registries);
+        m.onLoad();
+        h.assertTrue(m.permits(friend, Access.Action.DRAW), "the old roster's player is trusted by the owner now");
+        h.assertTrue("friend".equals(m.nameOf(friend.getUUID())), "with the name it had");
+        m.trust(friend.getUUID(), "friend", false);
+        m.loadWithComponents(old, registries);
+        m.onLoad();
+        h.assertTrue(!m.permits(friend, Access.Action.DRAW), "the old copy loading again does not trust them again");
+        h.assertTrue(!m.saveWithoutMetadata(registries).contains("Trusted"), "the block saves no roster of its own");
+        h.setBlock(MANAGER, Blocks.AIR);
+        h.succeed();
+    }
 }

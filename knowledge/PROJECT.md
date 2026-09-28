@@ -1,9 +1,24 @@
 # Warehouse Manager
 
-Version 0.5.1, built 2026-09-27. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.6.0, built 2026-09-28. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
 
-**0.5.1 (2026-09-27), built, verified and committed, NOT released** (waits on Rusty's go; he
-asked for it to ship in the same release as Village Deed 2.1.0): Rusty on pack 1.66.0, "I am
+**0.6.0 (2026-09-28), built, verified and committed, NOT released** (waits on Rusty's go): one
+owner's warehouses are one network ([D-0014](decisions/D-0014.md)). Rusty, after buying villages
+far apart: a manager placed in another village should pool both inventories, and spreading items
+evenly would be good redundancy; asked where deposits go, he chose balanced. Every owned manager
+joins its owner's network (`Network`, overworld saved data: members with their containers and
+routes, one roster per owner, the 0.5.x per-manager rosters folded once each). The index, the
+book, EMI and the fill read every member in reach; a deposit goes to the warehouse holding the
+least of its kind, a draw levels from the most (`domain.Spread`). Far warehouses load only while a
+screen or table of the network is open, as full chunks that do not tick (a ticket renewed each
+second, a minute's hold), and nothing loads synchronously: `hasChunk` answers true while a chunk
+is still loading and a read would then block the server, so reach is `getChunkNow`. Wire "3".
+Clean build green: 92 JUnit, 30 GameTests, booth 96 checks
+([record](../devtools/verification/release-0.6.0.md)); jar sha1 `d388cc1b…`, 225236 bytes. Not
+seen live: Rusty's second village. Ship as a minor pack bump (`--replaces
+mods/warehousemanager-0.5.1.jar`).
+
+0.5.1 (2026-09-27), released as pack 1.67.0 (below): Rusty on pack 1.66.0, "I am
 creating iron ingots, which it is doing by using iron nuggets, which it is doing by breaking down
 other iron ingots." D-0012's cycle guard never had the clicked recipe's result on its path and
 only stopped *making*, not *taking from stock*, an item on it ([D-0013](decisions/D-0013.md)).
@@ -85,18 +100,23 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
   `ItemFacts`), `Planner` (groups to containers), `FloodFill` (incremental, budgeted, sky-aware),
   `SignText` (layout), `Pooling` (what a recipe click draws), `Expansion` (what the table can
   make in steps: rules, plans, the most, the reachable), `Access` (owner, trusted, stranger; which
-  actions each tier gets). 80 JUnit tests with partitions at the top of each file.
+  actions each tier gets), `Spread` (which warehouse of a network a deposit goes to, how a draw
+  levels them). 92 JUnit tests with partitions at the top of each file.
 - `src/main` adapts: `Facts` (stack to facts, cached per item), `ManagerBlockEntity` (scan,
   plan, sort, label, buffer, status, ownership and roster, the synchronous placement walk),
   `ManagerBlock` (placement refusal, placer owns, claim by sneak-click), `Signs`, `Transfer`,
   `Managers` (loaded managers, wake-ups, claiming through `Claims`), `Claims` (saved data:
   container to manager), `Guard` (the refusals through NeoForge events and the blast
   protection), `ManagerMenu` and `Roster` (the trust panel's menu and wire), `Config`
-  (`operators_bypass`), `Pooled` (crafting from the chests, the rule book, the steps), the EMI
+  (`operators_bypass`), `Network` (an owner's warehouses and roster in saved data, the sites in
+  reach, the tickets that load them, counting and levelled taking across them), `Pooled`
+  (crafting from the chests, the rule book, the steps, the tally re-sent as warehouses come into
+  reach), the EMI
   plugin (the handler and `Expanded`), five mixins (recipe placement, the crafting table's
   position, container validity for trust withdrawal, the recipe book's tally, the collection's
   craftable set), `client/Craftables` and `client/ManagerScreen`.
-- `src/gametest`: twenty-five real-server GameTests on a two-floor house, plus the photo booth.
+- `src/gametest`: thirty real-server GameTests on a two-floor house (four with a second warehouse
+  2,048 blocks away, left to unload), plus the photo booth.
 
 ## 0.2.0 (was 0.1.1)
 

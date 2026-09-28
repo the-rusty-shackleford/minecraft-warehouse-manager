@@ -6,7 +6,9 @@ under that roof, across every floor, decides which container holds which kind of
 the contents until each container holds one group, and writes a sign on each one. Open the
 manager like a chest, drop anything in, and it goes to the right container on its own. The
 warehouse is yours: crafting from it, opening it and its chests are for you and the players
-you trust, chosen by clicking names in the manager's own screen.
+you trust, chosen by clicking names in the manager's own screen. Place a manager in another
+building, however far away, and your warehouses become one: any of your managers and any crafting
+table in any of them sees and draws on all of them.
 
 ## Crafting
 
@@ -52,7 +54,8 @@ action bar.
 ## The manager's screen
 
 Right-click the manager and you see the whole warehouse: every kind of item the building holds,
-one cell each with its total in the corner, under a heading per group in the order the groups
+and your other warehouses in reach with it (see "Your warehouses as one"), one cell each with
+its total in the corner, under a heading per group in the order the groups
 are labelled (Building / Stone first, Misc last). Hover a cell for the item's tooltip, its total
 and its heading. The grid scrolls under the wheel.
 
@@ -136,11 +139,37 @@ older pack without this handler.
 **Existing contents move.** That is the point of placing the block, and it will surprise anyone
 sharing the building who did not expect their sorting to change.
 
+## Your warehouses as one
+
+Every manager you own belongs to one network, in any dimension, without any linking step:
+placing a manager (or claiming an old one) adds it, breaking it takes it out.
+
+- **Seeing and taking.** The index counts every warehouse of yours in reach, and a cell's
+  tooltip says what each holds ("104 in your warehouses: 64 here, 40 at 2052, 4"). The recipe
+  book and EMI at a table in any of your buildings count them all, and a fill draws from them
+  all, parts made from far chests included.
+- **Where deposits go.** Whatever goes into a manager is sent to the warehouse that holds the
+  least of that item and has a chest for its group; on a tie it stays in the building you are
+  in. So over time every kind of item is split about evenly between your warehouses, and losing
+  one building loses a share of everything rather than all of something. A draw takes from the
+  warehouse holding the most first, which keeps them level. Nothing already stored is moved
+  between buildings, and each warehouse still sorts its own chests as before. An item dropped
+  in at one village may therefore end up in another village's chests; the tooltip says where.
+- **Far warehouses load only while you use them.** Opening a manager's screen or a crafting
+  table in one of your buildings asks the server to load your other warehouses' chunks, as
+  chunks that hold their chests but run nothing (no villagers, farms or redstone there), and
+  they stay loaded for a minute after you close it. Their stock appears within about a second
+  of opening; a recipe that needs a far chest lights up then. Nothing is loaded while nobody is
+  using the network.
+- **One trusted list.** Who you trust is one list for all your warehouses: trusting a player at
+  any manager lets them use every one. The panel's hint says how many it covers.
+
 ## Who may use it
 
 Whoever places the manager owns it. Open it and a panel beside the chest grid lists every
-player this world has seen (online ones in green); click a name to trust or untrust them.
-Three tiers follow from that: the owner, the trusted, and everyone else. What the tiers get:
+player this world has seen (online ones in green); click a name to trust or untrust them. The
+list is the owner's, for every warehouse they own (see above). Three tiers follow from that: the
+owner, the trusted, and everyone else. What the tiers get:
 
 | Action | Owner and trusted | Everyone else |
 |---|---|---|
@@ -251,6 +280,15 @@ their mod uses the common tags or the usual naming.
   means the same: the tally is only sent to the owner and their trusted players. The server
   log line "<player> opened a table in the building at <manager>: sending N kinds" appears
   only for them.
+- Another warehouse of yours is not in the index or the book: its stock arrives about a second
+  after opening (the server log says "loading the warehouse at <pos> for <owner>'s network: N
+  chunk(s)", then "the warehouse at <pos> is in reach … after N ms"). If the second line never
+  comes, the server could not load it; if neither appears, that manager is not in your network:
+  it is unowned (sneak-right-click claims it) or someone else's. "the warehouse at <pos> left its
+  owner's network" means its block was broken.
+- Something you put in at one village is not in its chests: it went to another of your
+  warehouses that held less of it; the index tooltip names where each share is.
+- Right-click the manager: the status ends "Linked with N other warehouses" when it has company.
 - "A manager already runs this building (at x, y, z)" when placing: walk to that position;
   it is the manager that owns the building, possibly through a gap in a wall you did not
   know was there.
@@ -267,13 +305,22 @@ containers gets sorted and labelled, an outside chest is untouched, the buffer r
 sign is rewritten, a double chest gets two signs, breaking spills, crafting draws from the chests
 and makes the parts it can; the owner and a trusted player draw and open while a stranger is
 refused, a second manager is refused through a hole in the wall, explosions leave held chests
-standing, claims outlive the manager's unloading). `./gradlew runPhotoBooth` opens a client on
+standing, claims outlive the manager's unloading; a second warehouse 2,048 blocks away, left to
+unload, comes back through the network's ticket without ticking, counts in the index, gives
+levelling draws and a far ingredient to a table, takes the deposits it is short of, shares one
+roster, and folds a roster from before 0.6.0 once). `./gradlew runPhotoBooth` opens a client on
 the booth world for a visual check of the signs, the recipe book, EMI, the parts made for a torch
-and for a rifle, the trust panel and a refusal. `./gradlew build` produces
+and for a rifle, the trust panel, a refusal, and a far warehouse coming into reach at a table and
+in the index's tooltip. `./gradlew build` produces
 `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
+**0.6.0**: your warehouses are one. Every manager you own shares its stock with the others: the
+index, the recipe book, EMI and the fill count and draw from all of them, deposits go where an
+item is scarcest so each kind spreads evenly, far warehouses load (without running anything)
+only while you use one, and the trusted list is one for all of them. Old per-manager lists are
+merged into it.
 **0.5.1**: a click never breaks down what it is making to make that thing's ingredients. 0.5.0
 guarded only the parts below the recipe clicked, so iron from nuggets, clicked with ingots in the
 chests, broke an ingot into nuggets to make the ingot (Rusty's report); now it is short of the
