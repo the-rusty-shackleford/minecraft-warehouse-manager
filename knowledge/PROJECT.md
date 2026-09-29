@@ -2,17 +2,17 @@
 
 Version 0.7.0, built 2026-09-28. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
 
-**0.7.0 (2026-09-28), built, verified and committed, NOT released**, on top of the unreleased
-0.6.0: the pooled fill counts, takes and gives what the player carries, their bags included, as
+**0.7.0 (2026-09-28), released 2026-09-29 and deployed in pack 1.68.0** with 0.6.0 (never
+released alone), Carried and Backpacks+ 0.6.0; 92 JUnit, 31 GameTests and the booth green in the
+release gate, sha1 `1f0be280` on the server, not yet seen in play. 0.7.0: the pooled fill counts, takes and gives what the player carries, their bags included, as
 vanilla's placement now does through the Carried protocol ([D-0015](decisions/D-0015.md)). 31
 GameTests with Backpacks+ 0.6.0 on the gametest server, green; the new one failed on 0.6.0. The
 release gate's booth run, with Backpacks+ on its client, found both mods' EMI table handlers
 claiming the front of EMI's list; this handler now stays first and takes its input slots from
 Backpacks+'s behind it (D-0015), and the booth ends with a worn bag's sticks counted by EMI and
-filled into a stone pickaxe with the chests' cobblestone. Ships with 0.6.0, Carried and
-Backpacks+ 0.6.0 as one pack on Rusty's go.
+filled into a stone pickaxe with the chests' cobblestone.
 
-**0.6.0 (2026-09-28), built, verified and committed, NOT released** (waits on Rusty's go): one
+**0.6.0 (2026-09-28), released with 0.7.0 in pack 1.68.0**: one
 owner's warehouses are one network ([D-0014](decisions/D-0014.md)). Rusty, after buying villages
 far apart: a manager placed in another village should pool both inventories, and spreading items
 evenly would be good redundancy; asked where deposits go, he chose balanced. Every owned manager
