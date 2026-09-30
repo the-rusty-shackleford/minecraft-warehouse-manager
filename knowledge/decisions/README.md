@@ -19,3 +19,4 @@ Rationales are append-only. Supersede with a new decision.
 | [D-0013](D-0013.md) | Accepted | Nothing being made is spent on its own ingredients, from the chests or by making it, at any depth; the planner is told the recipe's result (Rusty's ingot made from nuggets broken from ingots) |
 | [D-0014](D-0014.md) | Accepted | One owner's warehouses are one network: automatic by ownership, balanced deposits and levelling draws, far warehouses loaded (full, not ticking) only while the network is in use, one roster per owner (Rusty's villages far apart) |
 | [D-0015](D-0015.md) | Accepted | The pooled fill counts, takes and gives what the player carries through Carried, their bags included, as vanilla's placement now does |
+| [D-0016](D-0016.md) | Accepted | Your other warehouses load while you or a player you trust stand in one of your buildings, before a screen or table opens; a ledger lent against far contents is rejected (Rusty's ledger question) |

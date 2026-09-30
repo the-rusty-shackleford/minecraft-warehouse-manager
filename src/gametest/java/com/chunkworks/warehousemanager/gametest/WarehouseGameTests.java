@@ -1092,7 +1092,8 @@ public final class WarehouseGameTests {
      * the network's ticket brings it back without ticking, and the index then counts it, with a
      * breakdown of what each warehouse holds. */
     @GameTest(template = "house", timeoutTicks = 1200, skyAccess = true) public void aFarWarehouseComesIntoReachWhenTheNetworkIsUsed(GameTestHelper h) {
-        var owner = mock(h, CHEST.west());
+        // Outside, so standing in the building does not keep the far warehouse loaded (D-0016).
+        var owner = mock(h, OUTSIDE);
         buildNear(h, owner, Items.COBBLESTONE, 10);
         var f = far(h);
         var farManager = buildFar(h, f, owner, Items.COBBLESTONE, 30, Items.OAK_LOG, 8);
@@ -1116,12 +1117,15 @@ public final class WarehouseGameTests {
      * near building fills from a chest only the far warehouse holds; a deposit goes to the
      * warehouse holding the least of its kind, and stays here on a tie. */
     @GameTest(template = "house", timeoutTicks = 1400, skyAccess = true) public void drawsAndDepositsLevelTheWarehouses(GameTestHelper h) {
-        var owner = mock(h, CHEST.west());
+        // Outside, so standing in the building does not keep the far warehouse loaded (D-0016).
+        var owner = mock(h, OUTSIDE);
         buildNear(h, owner, Items.COBBLESTONE, 10, Items.SAND, 20);
         h.setBlock(TABLE, Blocks.CRAFTING_TABLE);
         var f = far(h);
         var farManager = buildFar(h, f, owner, Items.COBBLESTONE, 30, Items.OAK_LOG, 8);
         farInReach(h, f, owner, farManager)
+                // In, within reach of the manager's screen, whose menu closes on a player too far.
+                .thenExecute(() -> { var at = h.absolutePos(CHEST.west()); owner.moveTo(at.getX() + 0.5, at.getY(), at.getZ() + 0.5); })
                 // A second passes so the near manager's remembered view of its network includes
                 // the far warehouse before anything is deposited.
                 .thenIdle(21)
@@ -1161,6 +1165,38 @@ public final class WarehouseGameTests {
                 .thenSucceed();
     }
     private static Map<Item, Integer> census(GameTestHelper h, BlockPos chest) { var out = new HashMap<Item, Integer>(); count(chestAt(h, chest), out); return out; }
+
+    /** D-0016: the owner's other warehouses load while a player the owner trusts stands in one of
+     * the owner's buildings, before anything is opened: not for the owner outside it, nor for a
+     * stranger inside it, and at once for the same player trusted. Loaded, not ticking. */
+    @GameTest(template = "house", timeoutTicks = 1400, skyAccess = true) public void standingInAWarehouseLoadsTheOwnersOthers(GameTestHelper h) {
+        var owner = mock(h, OUTSIDE);
+        var visitor = mock(h, CHEST.west());
+        buildNear(h, owner, Items.COBBLESTONE, 10);
+        var f = far(h);
+        var farManager = buildFar(h, f, owner, Items.OAK_LOG, 8);
+        var level = h.getLevel();
+        h.startSequence()
+                .thenWaitUntil(() -> {
+                    h.assertTrue(manager(h).settled() && farManager.settled(), "both managers have scanned");
+                    h.assertTrue(Network.of(level.getServer()).size(owner.getUUID()) == 2, "both are in the owner's network");
+                })
+                .thenExecute(() -> level.setChunkForced(f.chunk().x, f.chunk().z, false))
+                .thenWaitUntil(() -> h.assertTrue(!farLoaded(h, f), "let go, the far chunk unloads with the owner outside and a stranger inside"))
+                .thenIdle(41) // two of the once-a-second checks
+                .thenExecute(() -> {
+                    h.assertTrue(!farLoaded(h, f), "two seconds on, the stranger in the building has loaded nothing");
+                    manager(h).trust(visitor.getUUID(), "visitor", true);
+                })
+                .thenWaitUntil(() -> h.assertTrue(farLoaded(h, f), "trusted, the same player standing there loads the far warehouse"))
+                .thenExecute(() -> {
+                    h.assertTrue(!level.shouldTickBlocksAt(f.chunk().toLong()), "as a full chunk that does not tick");
+                    h.assertTrue(Network.sites(manager(h)).size() == 2 && total(manager(h), Items.OAK_LOG) == 8, "in reach with nothing opened: the far logs count");
+                    h.setBlock(MANAGER, Blocks.AIR);
+                    level.setBlock(f.manager(), Blocks.AIR.defaultBlockState(), 3);
+                })
+                .thenSucceed();
+    }
 
     /** D-0014: the owner keeps one roster: trusting a player at the far manager lets them draw at
      * the near one, withdrawing it from the near manager's panel refuses them at the far one's

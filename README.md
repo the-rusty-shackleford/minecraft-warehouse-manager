@@ -104,6 +104,12 @@ stay with you.
 Tables outside the building's walls, and the inventory's own 2x2 grid, are unaffected. As
 always, the book shows only recipes you have unlocked; the warehouse does not unlock them.
 
+**Bags count as your pockets** (0.7.0, through the Carried protocol that Backpacks+ provides).
+What you carry in a worn or pocketed bag counts towards a recipe before anything is drawn from the
+chests; a part the fill makes may take its ingredients out of a bag; and what is drawn or made goes
+where anything you pick up goes, a bag included, dropped at your feet only when it fits nowhere.
+Without Backpacks+ there are no bags and nothing changes.
+
 **Parts the building could make count too.** A recipe whose ingredient is in no chest but could
 be crafted at the table from what the chests hold lights up as craftable, however many steps
 down that goes: a rifle from its receivers, the receivers from steel, the steel from iron and
@@ -155,12 +161,15 @@ placing a manager (or claiming an old one) adds it, breaking it takes it out.
   warehouse holding the most first, which keeps them level. Nothing already stored is moved
   between buildings, and each warehouse still sorts its own chests as before. An item dropped
   in at one village may therefore end up in another village's chests; the tooltip says where.
-- **Far warehouses load only while you use them.** Opening a manager's screen or a crafting
-  table in one of your buildings asks the server to load your other warehouses' chunks, as
-  chunks that hold their chests but run nothing (no villagers, farms or redstone there), and
-  they stay loaded for a minute after you close it. Their stock appears within about a second
-  of opening; a recipe that needs a far chest lights up then. Nothing is loaded while nobody is
-  using the network.
+- **Far warehouses load while you are in one of yours.** Standing inside one of your managed
+  buildings (you, or a player you trust), or having a manager's screen or a crafting table of
+  yours open, asks the server to load your other warehouses' chunks, as chunks that hold their
+  chests but run nothing (no villagers, farms or redstone there); they stay loaded for a minute
+  after you leave or close it. Walking in is enough: their stock arrives within about a second,
+  usually before you have reached a table, so the book and the index count it the moment they
+  open. Nothing is loaded while nobody who may use the network is in one of its buildings. The
+  items themselves are always taken from the real chests, never from a record of them (D-0016
+  says why).
 - **One trusted list.** Who you trust is one list for all your warehouses: trusting a player at
   any manager lets them use every one. The panel's hint says how many it covers.
 
@@ -281,11 +290,14 @@ their mod uses the common tags or the usual naming.
   log line "<player> opened a table in the building at <manager>: sending N kinds" appears
   only for them.
 - Another warehouse of yours is not in the index or the book: its stock arrives about a second
-  after opening (the server log says "loading the warehouse at <pos> for <owner>'s network: N
-  chunk(s)", then "the warehouse at <pos> is in reach … after N ms"). If the second line never
-  comes, the server could not load it; if neither appears, that manager is not in your network:
-  it is unowned (sneak-right-click claims it) or someone else's. "the warehouse at <pos> left its
-  owner's network" means its block was broken.
+  after you walk into the building or open a screen there (the server log says "loading the
+  warehouse at <pos> for <owner>'s network: N chunk(s)", then "the warehouse at <pos> is in reach
+  … after N ms"; when walking in did it, N is a whole second, the check being once a second, and
+  says only that it came within that second). If the second line never comes, the server could not
+  load it; if neither appears, that manager is not in your network: it is unowned (sneak-right-click
+  claims it), someone else's, or has not been loaded since 0.6.0 (a manager joins at its first scan
+  under 0.6.0 or later, which needs its chunk loaded by a player nearby once). "the warehouse at
+  <pos> left its owner's network" means its block was broken.
 - Something you put in at one village is not in its chests: it went to another of your
   warehouses that held less of it; the index tooltip names where each share is.
 - Right-click the manager: the status ends "Linked with N other warehouses" when it has company.
@@ -308,14 +320,20 @@ refused, a second manager is refused through a hole in the wall, explosions leav
 standing, claims outlive the manager's unloading; a second warehouse 2,048 blocks away, left to
 unload, comes back through the network's ticket without ticking, counts in the index, gives
 levelling draws and a far ingredient to a table, takes the deposits it is short of, shares one
-roster, and folds a roster from before 0.6.0 once). `./gradlew runPhotoBooth` opens a client on
-the booth world for a visual check of the signs, the recipe book, EMI, the parts made for a torch
-and for a rifle, the trust panel, a refusal, and a far warehouse coming into reach at a table and
-in the index's tooltip. `./gradlew build` produces
-`build/libs/warehousemanager-<version>.jar`.
+roster, loads when a trusted player stands in the near building but not for a stranger there or the
+owner outside, and folds a roster from before 0.6.0 once; a fill takes from a pocketed bag with
+Backpacks+ on the server). `./gradlew runPhotoBooth` opens a client on the booth world for a visual
+check of the signs, the recipe book, EMI, the parts made for a torch and for a rifle, the trust
+panel, a refusal, a far warehouse loaded by walking into the room and counted by a table's first
+tally and the index's tooltip, and a worn bag's sticks at the table. Both runs need
+`backpacksplus-0.7.0.jar` built in `../minecraft-backpacks-plus` and stop if it is missing.
+`./gradlew build` produces `build/libs/warehousemanager-<version>.jar`.
 
 ## Status
 
+**0.8.0**: your other warehouses load as you walk into one of yours, so their stock is counted
+the moment a screen or a table opens rather than a second later.
+**0.7.0**: the fill counts, takes from and gives to your bags as well as your inventory.
 **0.6.0**: your warehouses are one. Every manager you own shares its stock with the others: the
 index, the recipe book, EMI and the fill count and draw from all of them, deposits go where an
 item is scarcest so each kind spreads evenly, far warehouses load (without running anything)

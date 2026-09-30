@@ -82,6 +82,10 @@ neoForge.runs.matching { !(it.name in ['gameTestServer', 'photoBooth']) }.config
 }
 // The gametest run's classpath gets main's dependencies (Carried among them) as well as its classes.
 configurations { gametestImplementation.extendsFrom implementation }
+// Backpacks+ on the gametest server and in the booth, so the fill is proven against a real bag: the
+// version the pack ships, built in its own repo first. `files` drops a missing jar without a word,
+// which left the bag tests with no bag once that repo built its next version, so both runs check.
+def backpacksJar = file('../minecraft-backpacks-plus/build/libs/backpacksplus-0.7.0.jar')
 dependencies {
     // Carried (D-0015): the pooled fill counts, takes and gives what the player carries, their bags
     // included. Nested, as every consumer nests it; `./gradlew publishToMavenLocal` in
@@ -92,8 +96,7 @@ dependencies {
             prefer '1.0.0'
         }
     }
-    // Backpacks+ on the gametest server only, so the fill is proven against a real bag.
-    gametestRuntimeOnly files('../minecraft-backpacks-plus/build/libs/backpacksplus-0.6.0.jar')
+    gametestRuntimeOnly files(backpacksJar)
     implementation sourceSets.domain.output
     gametestImplementation sourceSets.main.output
     gametestImplementation sourceSets.domain.output
@@ -113,6 +116,9 @@ tasks.named('processResources') {
     filesMatching('META-INF/neoforge.mods.toml') { expand version: releaseVersion }
 }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.matching { it.name in ['runGameTestServer', 'runPhotoBooth'] }.configureEach {
+    doFirst { if (!backpacksJar.exists()) throw new GradleException("Backpacks+ is missing at ${backpacksJar}: build minecraft-backpacks-plus first") }
+}
 tasks.named('runGameTestServer') { task ->
     doLast {
         def log = gameTestLog.text

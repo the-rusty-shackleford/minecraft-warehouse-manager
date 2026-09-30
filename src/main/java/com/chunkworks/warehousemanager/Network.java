@@ -34,7 +34,9 @@ import java.util.function.ToIntFunction;
  * <p>The live side: {@link #sites} is the network as reachable this tick (the warehouse at hand,
  * then every member whose chunks are loaded), never loading anything; {@link #touch} asks the
  * server to load the members, as full but non-ticking chunks, for {@link #HOLD_TICKS} after the
- * last use, so a far warehouse's stock arrives within a second of opening a screen or a table.
+ * last use, so a far warehouse's stock arrives within a second of opening a screen or a table;
+ * {@link #warm} uses it while the owner or a trusted player stands in one of the owner's
+ * buildings, so it is usually there before anything is opened (D-0016).
  * <p>AF: {@code owners} maps a player to their roster (id to last-known name) and their members
  * (manager position to what its last scan saw); {@code ownerOf} maps each member back to its
  * owner; {@code folded} is the managers whose pre-0.6.0 rosters have been folded in. {@code
@@ -192,9 +194,7 @@ public final class Network extends SavedData {
             var l = level.getServer().getLevel(m.manager().dimension());
             if (l == null || !loadedNow(l, m)) continue;
             if (!l.getBlockState(m.manager().pos()).is(WarehouseManager.BLOCK)) { net.leave(m.manager()); continue; }
-            var started = net.loading.remove(m.manager());
-            if (started != null) LOG.info("the warehouse at {} is in reach for {}'s network after {} ms ({} chunk(s))",
-                    describe(m.manager()), here.ownerName(), (System.nanoTime() - started) / 1_000_000, chunks(m).size());
+            net.arrived(m, here.ownerName());
             far.add(new Site(l, m.manager().pos(), false, m.units(), m.routes()));
         }
         far.sort(Comparator.comparingLong(s -> s.distance(hereSite)));
@@ -220,9 +220,25 @@ public final class Network extends SavedData {
             if (l == null) continue;
             var chunks = chunks(m);
             for (var c : chunks) l.getChunkSource().addRegionTicket(TICKET, c, 0, c);
-            if (!loadedNow(l, m) && net.loading.putIfAbsent(m.manager(), System.nanoTime()) == null)
+            if (loadedNow(l, m)) net.arrived(m, here.ownerName());
+            else if (net.loading.putIfAbsent(m.manager(), System.nanoTime()) == null)
                 LOG.info("loading the warehouse at {} for {}'s network: {} chunk(s)", describe(m.manager()), here.ownerName(), chunks.size());
         }
+    }
+    /** effects: once a second, while a player the manager lets see its stock stands in its
+     * building, {@link #touch}es the network, so the owner's other warehouses are loaded, and
+     * their stock in reach, before a screen or a table is opened (D-0016); nothing for a manager
+     * with no other warehouse. */
+    static void warm(ManagerBlockEntity here, ServerLevel level) {
+        if (level.getGameTime() % Index.REFRESH_TICKS != 0 || here.linked() == 0) return;
+        for (var p : level.players())
+            if (here.contains(p.blockPosition()) && here.permits(p, Access.Action.SEE_STOCK)) { touch(here); return; }
+    }
+    /** effects: logs, once per request, that a member asked for is in reach and how long it took. */
+    private void arrived(Member m, String ownerName) {
+        var started = loading.remove(m.manager());
+        if (started != null) LOG.info("the warehouse at {} is in reach for {}'s network after {} ms ({} chunk(s))",
+                describe(m.manager()), ownerName, (System.nanoTime() - started) / 1_000_000, chunks(m).size());
     }
     /** effects: the chunks holding the member's manager and containers. */
     static Set<ChunkPos> chunks(Member m) {

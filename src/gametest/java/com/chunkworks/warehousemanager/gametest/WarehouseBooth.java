@@ -41,8 +41,8 @@ import java.util.function.Consumer;
  * double chest's two signs, the block itself, and its chest screen; then the recipe book and
  * EMI drawing from the chests, the furnished hut, the trust panel before and after a click, and
  * a stranger's refusal at nfx's hut; then a second warehouse 2,048 blocks east, unloaded, coming
- * into reach while a table is open, its copper filling a grid, and the index's breakdown of what
- * each warehouse holds (D-0014); last, a worn Backpacks+ bag's sticks counted by EMI at the table
+ * into reach as the player walks into the room (D-0016), its copper filling a grid, and the index's
+ * breakdown of what each warehouse holds (D-0014); last, a worn Backpacks+ bag's sticks counted by EMI at the table
  * and filled into a stone pickaxe with the chests' cobblestone (D-0015). Screenshots need a human
  * eye; this fixture never ships. */
 @EventBusSubscriber(modid = "warehousemanager_gametest", value = Dist.CLIENT)
@@ -468,13 +468,15 @@ public final class WarehouseBooth {
                 }
                 case 821 -> { if (net.neoforged.fml.ModList.get().isLoaded("rangedweaponsmod")) mc.player.closeContainer(); }
                 // The network (D-0014): a second warehouse of the booth player's, 2,048 blocks east,
-                // built with its chunk forced, then let go until it unloads. A table opened in the
-                // room counts only the room at first; the network's ticket brings the far chest in
-                // within a second, the tally is sent again, and the book and EMI light a copper
-                // block whose nine ingots are only in the far chest. EMI's fill draws them from there.
+                // built with its chunk forced while the player stands on the room's roof, outside
+                // it, then let go until it unloads. The player walks into the room, and that alone
+                // loads the far warehouse (D-0016): the table opened then counts its copper in its
+                // first tally, and the book and EMI light a copper block whose nine ingots are only
+                // in the far chest. EMI's fill draws them from there.
                 case 830 -> server(mc, p -> {
                     var l = p.serverLevel();
                     check(!Pooled.tally((ManagerBlockEntity) l.getBlockEntity(MANAGER)).containsKey(Items.COPPER_INGOT), "the room holds no copper of its own");
+                    p.teleportTo(l, 0.5, 106, 0.5, 0, 15);
                     l.setChunkForced(FAR_CHUNK.x, FAR_CHUNK.z, true);
                     for (int x = 2050; x <= 2057; x++) for (int y = 99; y <= 103; y++) for (int z = 2; z <= 9; z++) {
                         boolean shell = x == 2050 || x == 2057 || y == 99 || y == 103 || z == 2 || z == 9;
@@ -493,25 +495,28 @@ public final class WarehouseBooth {
                     var far = (ManagerBlockEntity) l.getBlockEntity(FAR_MANAGER);
                     check(far.settled() && far.units().size() == 1, "the far manager holds its chest");
                     check(Network.of(p.server).size(p.getUUID()) == 2, "both warehouses are the booth player's network");
+                    check(!((ManagerBlockEntity) l.getBlockEntity(MANAGER)).contains(p.blockPosition()), "the booth player stands outside the room, on its roof");
                     l.setChunkForced(FAR_CHUNK.x, FAR_CHUNK.z, false);
                 });
                 case 960 -> server(mc, p -> {
                     var l = p.serverLevel();
-                    check(l.getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) == null, "the far chunk unloaded once let go");
+                    check(l.getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) == null, "the far chunk unloaded once let go, the player outside");
                     var room = (ManagerBlockEntity) l.getBlockEntity(MANAGER);
                     check(Network.sites(room).size() == 1 && !Pooled.tally(room).containsKey(Items.COPPER_INGOT), "out of reach, the room alone counts, and no copper");
                     p.getInventory().clearContent();
                     p.teleportTo(l, 0.5, 100, 2.2, 0, 15);
-                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(l, TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting")));
-                    // The first tally went out inside openMenu. Checked here, in the same server
-                    // tick, since the far chunk can arrive and a second tally follow before the
-                    // client's next few ticks (48 ms once its data is cached).
-                    check(Network.sites(room).size() == 1, "the table opened, and its first tally went out, with the room alone in reach");
                 });
-                case 963 -> check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "the table is open");
-                case 1005 -> {
+                case 1020 -> server(mc, p -> {
+                    var l = p.serverLevel();
+                    var room = (ManagerBlockEntity) l.getBlockEntity(MANAGER);
+                    check(!l.shouldTickBlocksAt(FAR_CHUNK.toLong()) && l.getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) != null, "walking into the room loaded the far chunk, not ticking, with nothing opened");
+                    check(Network.sites(room).size() == 2, "the far warehouse is in reach before the table opens");
+                    p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(l, TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting")));
+                });
+                case 1023 -> check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "the table is open");
+                case 1025 -> {
                     int menu = mc.player.containerMenu.containerId;
-                    check(Pooled.Tally.snapshot(menu).getOrDefault(Items.COPPER_INGOT, 0) == 9, "a second tally, sent when the far warehouse came into reach, counts its nine copper: " + Pooled.Tally.describe());
+                    check(Pooled.Tally.snapshot(menu).getOrDefault(Items.COPPER_INGOT, 0) == 9, "the table's first tally, sent as it opened, counts the far chest's nine copper: " + Pooled.Tally.describe());
                     server(mc, p -> check(!p.serverLevel().shouldTickBlocksAt(FAR_CHUNK.toLong()) && p.serverLevel().getChunkSource().getChunkNow(FAR_CHUNK.x, FAR_CHUNK.z) != null, "the far chunk is loaded and not ticking"));
                     var copper = mc.player.getRecipeBook().getCollections().stream().filter(c -> c.getRecipes().stream().anyMatch(r -> r.id().getPath().equals("copper_block"))).findFirst().orElseThrow();
                     check(copper.hasCraftable(), "the vanilla book lights the copper block");
@@ -521,7 +526,7 @@ public final class WarehouseBooth {
                     @SuppressWarnings("unchecked") var screen = (net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.CraftingMenu>) mc.screen;
                     check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the copper block is accepted");
                 }
-                case 1010 -> {
+                case 1030 -> {
                     int copper = 0;
                     for (int i = 1; i <= 9; i++) if (mc.player.containerMenu.getSlot(i).getItem().is(Items.COPPER_INGOT)) copper += mc.player.containerMenu.getSlot(i).getItem().getCount();
                     check(copper == 9, "nine copper in the grid from the far chest, got " + copper);
@@ -536,8 +541,8 @@ public final class WarehouseBooth {
                     photo(mc, "16-emi-fill-from-far");
                     mc.player.closeContainer();
                 }
-                case 1015 -> server(mc, p -> { p.getInventory().clearContent(); ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p); });
-                case 1040 -> {
+                case 1035 -> server(mc, p -> { p.getInventory().clearContent(); ((ManagerBlockEntity) p.serverLevel().getBlockEntity(MANAGER)).open(p); });
+                case 1060 -> {
                     check(mc.screen instanceof ManagerScreen, "the room's manager screen is open");
                     var screen = (ManagerScreen) mc.screen;
                     var key = "minecraft:cobblestone#" + net.minecraft.core.component.DataComponentPatch.EMPTY.hashCode();
@@ -548,13 +553,13 @@ public final class WarehouseBooth {
                     check(at != null, "the cobblestone cell is on screen");
                     hover(mc, at[0], at[1]);
                 }
-                case 1043 -> photo(mc, "17-index-far-tooltip");
-                case 1045 -> mc.player.closeContainer();
+                case 1063 -> photo(mc, "17-index-far-tooltip");
+                case 1065 -> mc.player.closeContainer();
                 // The bag at a managed table through EMI (D-0015, Backpacks+ D-0033): a worn
                 // Backpacks+ bag holds the only sticks, the chests the cobblestone. EMI counts the
                 // bag's cells through the handler behind the warehouse's, and a stone pickaxe fills
                 // from both.
-                case 1050 -> server(mc, p -> {
+                case 1070 -> server(mc, p -> {
                     var bag = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse("backpacksplus:basic_backpack"));
                     check(bag != Items.AIR, "Backpacks+'s basic bag is registered");
                     var inventory = p.getInventory();
@@ -571,11 +576,11 @@ public final class WarehouseBooth {
                 });
                 // The table opens once the client has the bag: the server sends the chest slot with
                 // the inventory's own menu, which it syncs only while no other menu is open.
-                case 1090 -> {
+                case 1110 -> {
                     check(mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).getItem() != Items.AIR, "the client wears the bag: " + mc.player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST));
                     server(mc, p -> p.openMenu(new net.minecraft.world.SimpleMenuProvider((id, inv, pl) -> new net.minecraft.world.inventory.CraftingMenu(id, inv, net.minecraft.world.inventory.ContainerLevelAccess.create(p.serverLevel(), TABLE)), net.minecraft.network.chat.Component.translatable("container.crafting"))));
                 }
-                case 1120 -> {
+                case 1140 -> {
                     check(mc.screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen, "the table is open with the bag worn");
                     int menu = mc.player.containerMenu.containerId;
                     int tallied = Pooled.Tally.snapshot(menu).getOrDefault(Items.STICK, 0);
@@ -588,7 +593,7 @@ public final class WarehouseBooth {
                     check(dev.emi.emi.registry.EmiRecipeFiller.getFirstValidHandler(recipe, screen) instanceof com.chunkworks.warehousemanager.integration.emi.WarehouseEmiPlugin.PooledCraftingHandler, "EMI fills the pickaxe through the warehouse handler");
                     check(dev.emi.emi.registry.EmiRecipeFiller.performFill(recipe, screen, dev.emi.emi.api.recipe.handler.EmiCraftContext.Type.FILL_BUTTON, dev.emi.emi.api.recipe.handler.EmiCraftContext.Destination.NONE, 1), "EMI's fill of the stone pickaxe is accepted");
                 }
-                case 1125 -> {
+                case 1145 -> {
                     int cobblestone = 0, sticks = 0;
                     for (int i = 1; i <= 9; i++) { var s = mc.player.containerMenu.getSlot(i).getItem(); if (s.is(Items.COBBLESTONE)) cobblestone += s.getCount(); if (s.is(Items.STICK)) sticks += s.getCount(); }
                     check(cobblestone == 3 && sticks == 2, "the grid holds three cobblestone and two sticks: " + cobblestone + " and " + sticks);
@@ -596,7 +601,7 @@ public final class WarehouseBooth {
                     photo(mc, "18-emi-fill-from-bag");
                     mc.player.closeContainer();
                 }
-                case 1130 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
+                case 1150 -> { LOG.info("warehousemanager booth: COMPLETE"); mc.stop(); }
             }
         } catch (Throwable failure) { LOG.error("warehousemanager booth: FAIL", failure); mc.stop(); }
     }

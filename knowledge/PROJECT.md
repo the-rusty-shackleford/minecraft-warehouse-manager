@@ -1,6 +1,22 @@
 # Warehouse Manager
 
-Version 0.7.0, built 2026-09-28. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.8.0, built 2026-09-30. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+**0.8.0 (2026-09-30)**: your other warehouses load while you, or a player you trust, stand in one
+of your buildings ([D-0016](decisions/D-0016.md)), so a screen or a table opened there counts
+them at once. Rusty asked why the network does not keep a ledger of far contents and debit it
+instead of fetching from the chests; D-0016 records the answer (it can be made to conserve
+items only with a reconcile at chunk load and a sequence number in the chunk, it is not much
+cheaper for the server, and a missed hook mints or destroys items silently) and this rule as
+the cheap part of the win. `Network.warm`, once a second from the manager's tick; the arrival
+log moved into `touch` too. New GameTest (a stranger inside and the owner outside load nothing,
+the same player trusted does), checked against three mutations; the D-0014 tests stand the owner
+outside while the far chunk unloads; the booth walks the player in from the roof and the table's
+first tally counts the far copper. Also fixed: the build named `backpacksplus-0.6.0.jar`, gone
+since that repo built 0.7.0, so the bag GameTest had silently lost its bag; it names 0.7.0 now
+and the runs stop if the jar is missing. 92 JUnit, 32 GameTests, booth 109 checks green before
+the release gate. Not yet seen on the box: Rusty's first manager (-1570, 68, -355) has not loaded
+since 0.6.0, so his network has one member until it does.
 
 **0.7.0 (2026-09-28), released 2026-09-29 and deployed in pack 1.68.0** with 0.6.0 (never
 released alone), Carried and Backpacks+ 0.6.0; 92 JUnit, 31 GameTests and the booth green in the
@@ -125,8 +141,10 @@ whose contents are routed into the right chest. D-0001 records the design and Ru
   plugin (the handler and `Expanded`), five mixins (recipe placement, the crafting table's
   position, container validity for trust withdrawal, the recipe book's tally, the collection's
   craftable set), `client/Craftables` and `client/ManagerScreen`.
-- `src/gametest`: thirty real-server GameTests on a two-floor house (four with a second warehouse
-  2,048 blocks away, left to unload), plus the photo booth.
+- `src/gametest`: thirty-two real-server GameTests on a two-floor house (five with a second
+  warehouse 2,048 blocks away, left to unload), plus the photo booth. A far test that lets the
+  far chunk unload stands the owner outside the building, since standing inside keeps it loaded
+  (D-0016).
 
 ## 0.2.0 (was 0.1.1)
 

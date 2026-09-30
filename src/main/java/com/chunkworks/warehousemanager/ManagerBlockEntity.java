@@ -225,6 +225,7 @@ public final class ManagerBlockEntity extends BlockEntity {
         if (!registered) { Managers.add(this); registered = true; }
         Index.refresh(this, sl);
         Pooled.refresh(this, sl);
+        Network.warm(this, sl);
         if (fill != null) { if (fill.step(CELLS_PER_TICK)) finishScan(sl); return; }
         if (--rescanIn <= 0) { startScan(sl); return; }
         if (furnish(sl)) return;
