@@ -14,9 +14,13 @@ the same player trusted does), checked against three mutations; the D-0014 tests
 outside while the far chunk unloads; the booth walks the player in from the roof and the table's
 first tally counts the far copper. Also fixed: the build named `backpacksplus-0.6.0.jar`, gone
 since that repo built 0.7.0, so the bag GameTest had silently lost its bag; it names 0.7.0 now
-and the runs stop if the jar is missing. 92 JUnit, 32 GameTests, booth 109 checks green before
-the release gate. Not yet seen on the box: Rusty's first manager (-1570, 68, -355) has not loaded
-since 0.6.0, so his network has one member until it does.
+and the runs stop if the jar is missing. **Released 2026-09-30 and deployed in pack 1.70.0** with
+Vanilla Wheels 1.10.1: 92 JUnit, 32 GameTests and the booth (109 checks) green in the release gate,
+sha1 `25f1e685` on the server (the server repo's `knowledge/releases/pack-1.70.0.md`). Right
+after, Rusty's first manager (-1570, 68, -355), which had not loaded since 0.6.0 and so was not in
+his network, was force-loaded for a minute with nobody online: its 0.5.x roster folded (WAXER_01,
+Bobandy_, OtatopMalloy) and it joined with 20 containers beside the new one's 3. Not yet seen in
+play: the walk-in load on the box.
 
 **0.7.0 (2026-09-28), released 2026-09-29 and deployed in pack 1.68.0** with 0.6.0 (never
 released alone), Carried and Backpacks+ 0.6.0; 92 JUnit, 31 GameTests and the booth green in the
