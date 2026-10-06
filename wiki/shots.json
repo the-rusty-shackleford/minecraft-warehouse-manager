@@ -1,0 +1,11 @@
+{
+  "shots": [
+    {"from": "run/booth/screenshots/warehousemanager-01-sign-closeup.png", "to": "img/labelled.webp"},
+    {"from": "run/booth/screenshots/warehousemanager-03-manager-block.png", "to": "img/manager.webp"},
+    {"from": "run/booth/screenshots/warehousemanager-10-trust-panel-one-trusted.png", "to": "img/index.webp", "crop": [440, 135, 1100, 400], "screen": true},
+    {"from": "run/booth/screenshots/warehousemanager-17-index-far-tooltip.png", "to": "img/far-tooltip.webp", "crop": [440, 135, 1100, 400], "screen": true},
+    {"from": "run/booth/screenshots/warehousemanager-08-emi-fill-from-chests.png", "to": "img/emi.webp", "crop": [250, 180, 970, 520], "screen": true},
+    {"from": "run/booth/screenshots/warehousemanager-05-furnished-hut.png", "to": "img/furnished.webp"},
+    {"from": "run/booth/screenshots/warehousemanager-11-refused-at-the-door.png", "to": "img/refused.webp"}
+  ]
+}
