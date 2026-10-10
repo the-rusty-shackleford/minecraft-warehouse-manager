@@ -85,7 +85,7 @@ configurations { gametestImplementation.extendsFrom implementation }
 // Backpacks+ on the gametest server and in the booth, so the fill is proven against a real bag: the
 // version the pack ships, built in its own repo first. `files` drops a missing jar without a word,
 // which left the bag tests with no bag once that repo built its next version, so both runs check.
-def backpacksJar = file('../minecraft-backpacks-plus/build/libs/backpacksplus-0.7.0.jar')
+def backpacksJar = file('../minecraft-backpacks-plus/build/libs/backpacksplus-0.7.1.jar')
 dependencies {
     // Carried (D-0015): the pooled fill counts, takes and gives what the player carries, their bags
     // included. Nested, as every consumer nests it; `./gradlew publishToMavenLocal` in

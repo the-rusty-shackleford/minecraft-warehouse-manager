@@ -1,4 +1,5 @@
 {
+  "itemGroup.warehousemanager": "Warehouse Manager",
   "block.warehousemanager.warehouse_manager": "Warehouse Manager",
   "container.warehousemanager.manager": "Warehouse Manager",
   "warehousemanager.status.scanning": "Warehouse Manager: mapping the building…",

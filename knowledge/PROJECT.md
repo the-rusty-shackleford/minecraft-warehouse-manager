@@ -1,6 +1,11 @@
 # Warehouse Manager
 
-Version 0.8.0, built 2026-09-30. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+Version 0.9.0, built 2026-10-10. Minecraft 1.21.1, NeoForge 21.1.248, Java 21.
+
+**0.9.0 (2026-10-10), built and gated, unreleased**: the manager has a creative tab of its own,
+**Warehouse Manager** (Rusty, 2026-10-10: a pane for every mod with recipes), and stays in Functional
+Blocks. Found on the way: the gametest server named Backpacks+ 0.7.0's jar, gone since that repo built
+0.7.1 (the box's), and stopped as its guard says; it names 0.7.1. Gate: the release gate (2026-10-10, `clean build --no-build-cache`) green with 92 JUnit, 33 gametests and the booth's 109 checks.
 
 **0.8.0 (2026-09-30)**: your other warehouses load while you, or a player you trust, stand in one
 of your buildings ([D-0016](decisions/D-0016.md)), so a screen or a table opened there counts

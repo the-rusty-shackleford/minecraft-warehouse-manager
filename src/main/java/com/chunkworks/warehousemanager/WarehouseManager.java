@@ -2,12 +2,14 @@
 package com.chunkworks.warehousemanager;
 
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
@@ -36,6 +38,7 @@ public final class WarehouseManager {
     private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(ID);
     private static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, ID);
+    private static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, ID);
     /** Containers the manager tracks: {@code warehousemanager:managed}. */
     public static final TagKey<Block> MANAGED = TagKey.create(Registries.BLOCK, id("managed"));
     public static final DeferredBlock<ManagerBlock> BLOCK = BLOCKS.registerBlock("warehouse_manager", ManagerBlock::new,
@@ -46,6 +49,13 @@ public final class WarehouseManager {
     public static final DeferredHolder<MenuType<?>, MenuType<ManagerMenu>> MENU =
             MENUS.register("warehouse_manager", () -> new MenuType<>(ManagerMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
+    /** The mod's own creative tab (Rusty, 2026-10-10: a pane for every mod with recipes): the manager, its one item; it stays in Functional Blocks too. */
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> CREATIVE_TAB = TABS.register("main", () -> CreativeModeTab.builder()
+            .title(Component.translatable("itemGroup.warehousemanager"))
+            .icon(() -> ITEM.get().getDefaultInstance())
+            .displayItems((parameters, output) -> output.accept(ITEM.get()))
+            .build());
+
     public static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath(ID, path); }
 
     /** requires: the mod bus and container; effects: registers content, config and event listeners. */
@@ -54,6 +64,7 @@ public final class WarehouseManager {
         ITEMS.register(bus);
         BLOCK_ENTITIES.register(bus);
         MENUS.register(bus);
+        TABS.register(bus);
         container.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
         bus.addListener((BuildCreativeModeTabContentsEvent e) -> { if (e.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) e.accept(ITEM); });
         NeoForge.EVENT_BUS.addListener((TagsUpdatedEvent e) -> Facts.clear());

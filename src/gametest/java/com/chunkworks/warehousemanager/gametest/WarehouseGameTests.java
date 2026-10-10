@@ -1260,4 +1260,16 @@ public final class WarehouseGameTests {
         h.setBlock(MANAGER, Blocks.AIR);
         h.succeed();
     }
+
+    /** The mod's own creative tab (Rusty, 2026-10-10): the manager, which stays in Functional Blocks too. */
+    @GameTest(template = "house", timeoutTicks = 20) public void theManagerHasATabOfItsOwnAndStaysInFunctionalBlocks(GameTestHelper h) {
+        CreativeModeTab.ItemDisplayParameters params = new CreativeModeTab.ItemDisplayParameters(h.getLevel().enabledFeatures(), true, h.getLevel().registryAccess());
+        CreativeModeTab ours = WarehouseManager.CREATIVE_TAB.get();
+        ours.buildContents(params);
+        h.assertValueEqual(ours.getDisplayItems().stream().map(ItemStack::getItem).toList(), java.util.List.<Item>of(WarehouseManager.ITEM.get()), "its tab");
+        CreativeModeTab blocks = net.minecraft.core.registries.BuiltInRegistries.CREATIVE_MODE_TAB.getOrThrow(CreativeModeTabs.FUNCTIONAL_BLOCKS);
+        blocks.buildContents(params);
+        h.assertTrue(blocks.getDisplayItems().stream().anyMatch(st -> st.is(WarehouseManager.ITEM.get())), "still in Functional Blocks");
+        h.succeed();
+    }
 }
